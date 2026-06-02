@@ -1,0 +1,5 @@
+.vercel
+.env
+*.zip
+*.skill
+node_modules
