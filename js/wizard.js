@@ -167,7 +167,7 @@ async function handleConnect() {
       profilePicture: result.profilePicture || null,
       tokenCreated: new Date().toISOString(),
     };
-    saveAccount(account);
+    await saveAccount(account);
     localStorage.setItem('ig_active_account', account.id);
 
     status.className = 'status visible success';
