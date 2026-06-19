@@ -61,13 +61,13 @@ export function getAccounts() {
   } catch { return []; }
 }
 
-export function saveAccount(account) {
+export async function saveAccount(account) {
   const accounts = getAccounts();
   const idx = accounts.findIndex(a => a.id === account.id);
   if (idx >= 0) accounts[idx] = account;
   else accounts.push(account);
   localStorage.setItem(KEYS.ACCOUNTS, JSON.stringify(accounts));
-  _cloudSaveAccount(account);
+  await _cloudSaveAccount(account);
 }
 
 async function _cloudSaveAccount(account) {
