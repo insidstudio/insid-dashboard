@@ -1,5 +1,5 @@
 /* ============================================================
-   DESIGN SYSTEM — Instagram Dashboard
+   DESIGN SYSTEM â Instagram Dashboard
    Brand: Insid Studio
    Concept: Dark Graphite
    ============================================================ */
@@ -38,7 +38,7 @@
   --radius-sm: 12px;
   --radius-xs: 8px;
 
-  --font-display: 'Playfair Display', Georgia, serif;
+  --font-display: 'Raleway', system-ui, sans-serif;
   --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
@@ -1019,7 +1019,7 @@ body {
   }
 
   .pdf-cover-emoji { font-size: 64px; margin-bottom: 24px; }
-  .pdf-cover-title { font-family: 'Playfair Display', Georgia, serif; font-size: 36px; font-weight: 700; color: #FFF7EC !important; margin-bottom: 8px; }
+  .pdf-cover-title { font-family: 'Raleway', system-ui, sans-serif; font-size: 36px; font-weight: 700; color: #FFF7EC !important; margin-bottom: 8px; }
   .pdf-cover-account { font-size: 22px; color: #C4908E !important; font-weight: 600; margin-bottom: 32px; }
   .pdf-cover-period { font-size: 14px; color: rgba(255, 247, 236, 0.6) !important; background: rgba(255, 247, 236, 0.08); border-radius: 20px; padding: 8px 24px; display: inline-block; }
   .pdf-cover-date { font-size: 12px; color: rgba(255, 247, 236, 0.4) !important; margin-top: 40px; }
