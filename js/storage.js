@@ -13,8 +13,6 @@ const KEYS = {
 
 let _serverConfig = null;
 
-// ── Server config ─────────────────────────────────────────────
-
 export async function loadServerConfig() {
   try {
     const res = await fetch('/env-config');
@@ -29,14 +27,10 @@ export function isServerConfigured() {
   return Boolean(_serverConfig?.configured);
 }
 
-// ── Multi-account ─────────────────────────────────────────────
-
 export function getAccounts() {
   try {
     const raw = localStorage.getItem(KEYS.ACCOUNTS);
     const accounts = raw ? JSON.parse(raw) : [];
-
-    // Migrate legacy single-account if no accounts saved yet
     if (accounts.length === 0) {
       const token = localStorage.getItem(KEYS.TOKEN);
       const userId = localStorage.getItem(KEYS.USER_ID);
@@ -56,18 +50,17 @@ export function getAccounts() {
         localStorage.setItem(KEYS.ACTIVE_ACCOUNT, 'legacy');
       }
     }
-
     return accounts;
   } catch { return []; }
 }
 
-export async function saveAccount(account) {
+export function saveAccount(account) {
   const accounts = getAccounts();
   const idx = accounts.findIndex(a => a.id === account.id);
   if (idx >= 0) accounts[idx] = account;
   else accounts.push(account);
   localStorage.setItem(KEYS.ACCOUNTS, JSON.stringify(accounts));
-  await _cloudSaveAccount(account);
+  _cloudSaveAccount(account);
 }
 
 async function _cloudSaveAccount(account) {
@@ -112,14 +105,12 @@ export function getActiveAccount() {
   return accounts.find(a => a.id === activeId) || accounts[0] || null;
 }
 
-// ── Cloud sync (load from Supabase on startup) ───────────────
-
 export async function syncFromCloud() {
   if (!isCloudEnabled()) return;
   try {
     const { data } = await getSupabase().from('accounts').select('*');
     if (!data || data.length === 0) return;
-    const accounts = data.map(row => ({
+    const cloudAccounts = data.map(row => ({
       id: row.id,
       label: row.label,
       token: row.token,
@@ -128,14 +119,18 @@ export async function syncFromCloud() {
       profilePicture: row.profile_picture,
       tokenCreated: row.token_created,
     }));
-    localStorage.setItem(KEYS.ACCOUNTS, JSON.stringify(accounts));
+    // MERGE: keep local accounts not in cloud so locally-added accounts survive
+    const local = getAccounts();
+    const merged = [...cloudAccounts];
+    for (const loc of local) {
+      if (!merged.find(a => a.id === loc.id)) merged.push(loc);
+    }
+    localStorage.setItem(KEYS.ACCOUNTS, JSON.stringify(merged));
     if (!localStorage.getItem(KEYS.ACTIVE_ACCOUNT)) {
-      localStorage.setItem(KEYS.ACTIVE_ACCOUNT, accounts[0].id);
+      localStorage.setItem(KEYS.ACTIVE_ACCOUNT, merged[0].id);
     }
   } catch {}
 }
-
-// ── Token / UserId (reads from active account) ────────────────
 
 export function getToken() {
   const active = getActiveAccount();
@@ -163,8 +158,6 @@ export function removeStaleAccounts() {
   return stale.length;
 }
 
-// ── Cache (per account) ───────────────────────────────────────
-
 export function saveCache(data, days = 30) {
   const id = getActiveAccountId() || 'default';
   localStorage.setItem(`ig_cache_${id}_${days}d`, JSON.stringify(data));
@@ -175,7 +168,6 @@ export function getCache(days = 30) {
   const id = getActiveAccountId() || 'default';
   try {
     const raw = localStorage.getItem(`ig_cache_${id}_${days}d`);
-    // fallback for old cache key
     const fallback = localStorage.getItem(`ig_cache_${id}`);
     return raw ? JSON.parse(raw) : (days === 30 && fallback ? JSON.parse(fallback) : null);
   } catch { return null; }
@@ -191,8 +183,6 @@ export function clearAll() {
     .forEach(k => localStorage.removeItem(k));
 }
 
-// ── Token expiry (for active account) ────────────────────────
-
 export function getTokenDaysRemaining() {
   if (isServerConfigured()) return null;
   const active = getActiveAccount();
@@ -200,8 +190,6 @@ export function getTokenDaysRemaining() {
   const age = Math.floor((Date.now() - new Date(active.tokenCreated).getTime()) / 86400000);
   return Math.max(0, 60 - age);
 }
-
-// ── Legacy helpers (used by wizard) ──────────────────────────
 
 export function saveToken(token) {
   localStorage.setItem(KEYS.TOKEN, token);
