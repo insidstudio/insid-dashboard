@@ -18,24 +18,22 @@ async function graphGet(path, params = {}) {
 }
 
 export async function validateToken(token) {
-  const qs = new URLSearchParams({
-    fields: 'user_id,username,name,account_type,profile_picture_url,followers_count',
-    access_token: token,
-    apiPath: `/${API_VERSION}/me`,
-  });
-  const res = await fetch(`/api/proxy?${qs}`);
+  // Chama a API do Instagram diretamente (sem proxy) para evitar conflitos de token
+  const res = await fetch(
+    `https://graph.instagram.com/${API_VERSION}/me?fields=id,username,profile_picture_url,followers_count&access_token=${encodeURIComponent(token)}`
+  );
   const data = await res.json();
 
   if (data.error) {
     throw new Error(data.error.message || 'Erro na API do Instagram');
   }
 
-  if (!data.user_id) {
+  if (!data.id) {
     throw new Error('Token invalido ou sem permissoes. Verifique se: (1) sua conta e Business ou Creator (nao pessoal), (2) o token tem a permissao instagram_business_basic.');
   }
 
   return {
-    userId: data.user_id,
+    userId: data.id,
     username: data.username,
     profilePicture: data.profile_picture_url,
     followersCount: data.followers_count,
