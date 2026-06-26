@@ -27,7 +27,7 @@ function buildSectionsHTML(s) {
       <div class="section-eyebrow">BASEADAS NOS TOP PERFORMERS</div>
       <h2 class="section-title">5 Ideias de Conteudo</h2>
     </div>
-    <div class="ai-ideias-grid">${ideiasHTML}</div>
+    <div class="ai-ideias-grid"></div>
 
     <div class="ai-section-divider"></div>
     <div class="ai-report-header">
@@ -74,13 +74,6 @@ function injectStyles() {
   .ai-op-title{font-size:15px;font-weight:600;color:var(--text-primary);margin-bottom:10px}
   .ai-op-tag{font-size:9px;font-weight:700;letter-spacing:.9px;color:var(--rose-gold);text-transform:uppercase;margin:8px 0 4px;background:rgba(200,169,110,.1);border-radius:4px;padding:2px 6px;display:inline-block}
   .ai-op-text{font-size:13px;color:var(--text-secondary);line-height:1.6}
-  .ai-ideias-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
-  .ai-ideia{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px}
-  .ai-ideia-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-  .ai-ideia-num{font-family:var(--font-display);font-size:22px;font-weight:700;color:var(--text-muted)}
-  .ai-ideia-badge{font-size:9px;font-weight:700;padding:3px 8px;border-radius:20px;letter-spacing:.5px}
-  .ai-ideia-title{font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:8px;line-height:1.4}
-  .ai-ideia-desc{font-size:12px;color:var(--text-secondary);line-height:1.55}
   .ai-cruzamento-top{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
   .ai-cruz-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px}
   .ai-cruz-destaque{border-color:rgba(126,200,160,.3);background:rgba(126,200,160,.05)}
@@ -96,7 +89,6 @@ function injectStyles() {
   .ai-text-fallback{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;font-size:14px;line-height:1.75;white-space:pre-wrap;color:var(--text-primary)}
   @media(max-width:768px){
     .ai-resumo-grid,.ai-cruzamento-top,.ai-cruzamento-bottom{grid-template-columns:1fr}
-    .ai-ideias-grid{grid-template-columns:1fr}
   }`;
   document.head.appendChild(style);
 }
