@@ -24,13 +24,6 @@ function buildSectionsHTML(s) {
 
     <div class="ai-section-divider"></div>
     <div class="ai-report-header">
-      <div class="section-eyebrow">BASEADAS NOS TOP PERFORMERS</div>
-      <h2 class="section-title">5 Ideias de Conteudo</h2>
-    </div>
-    <div class="ai-ideias-grid"></div>
-
-    <div class="ai-section-divider"></div>
-    <div class="ai-report-header">
       <div class="section-eyebrow">INTELIGENCIA DE DADOS</div>
       <h2 class="section-title">Cruzamento de Dados</h2>
     </div>
