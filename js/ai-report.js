@@ -1,7 +1,6 @@
-// ai-report.js — Relatório IA sob demanda (seções estruturadas)
+// ai-report.js — Relatorio IA sob demanda com secoes estruturadas
 
-function buildSectionsHTML(s, username) {
-  const fmt = (n) => n != null ? Number(n).toLocaleString('pt-BR') : 'N/D';
+function buildSectionsHTML(s) {
   const badges = { REEL: '#7ec8a0', CARROSSEL: '#88b0cc', STORY: '#C8A96E' };
 
   const destacadosHTML = (s.destaques || []).map(d => `
@@ -16,7 +15,7 @@ function buildSectionsHTML(s, username) {
       <div class="ai-op-num">${o.numero}</div>
       <div class="ai-op-body">
         <div class="ai-op-title">${o.titulo}</div>
-        <div class="ai-op-tag">POR QUÊ</div>
+        <div class="ai-op-tag">POR QUE</div>
         <div class="ai-op-text">${o.porQue}</div>
         <div class="ai-op-tag">COMO TESTAR</div>
         <div class="ai-op-text">${o.comoTestar}</div>
@@ -40,51 +39,47 @@ function buildSectionsHTML(s, username) {
   return `
   <div class="ai-report-wrap">
     <div class="ai-report-header">
-      <div class="section-eyebrow">ANÁLISE IA</div>
+      <div class="section-eyebrow">ANALISE IA</div>
       <h2 class="section-title">Resumo Executivo</h2>
     </div>
-
     <div class="ai-resumo-grid">
       <div class="ai-resumo-text">${s.resumo || ''}</div>
       <div class="ai-cards-sm">${destacadosHTML}</div>
     </div>
 
     <div class="ai-section-divider"></div>
-
     <div class="ai-report-header">
-      <div class="section-eyebrow">OPORTUNIDADES NÃO EXPLORADAS</div>
+      <div class="section-eyebrow">OPORTUNIDADES NAO EXPLORADAS</div>
       <h2 class="section-title">O que fazer agora</h2>
     </div>
     <div class="ai-oportunidades">${opHTML}</div>
 
     <div class="ai-section-divider"></div>
-
     <div class="ai-report-header">
       <div class="section-eyebrow">BASEADAS NOS TOP PERFORMERS</div>
-      <h2 class="section-title">5 Ideias de Conteúdo</h2>
+      <h2 class="section-title">5 Ideias de Conteudo</h2>
     </div>
     <div class="ai-ideias-grid">${ideiasHTML}</div>
 
     <div class="ai-section-divider"></div>
-
     <div class="ai-report-header">
-      <div class="section-eyebrow">INTELIGÊNCIA DE DADOS</div>
+      <div class="section-eyebrow">INTELIGENCIA DE DADOS</div>
       <h2 class="section-title">Cruzamento de Dados</h2>
     </div>
     <div class="ai-cruzamento-top">
       <div class="ai-cruz-card ai-cruz-destaque">
-        <div class="ai-cruz-label">🏆 Destaques do período</div>
+        <div class="ai-cruz-label">Destaques do periodo</div>
         <div class="ai-cruz-text">${c.destaque || ''}</div>
       </div>
       <div class="ai-cruz-card ai-cruz-atencao">
-        <div class="ai-cruz-label">📌 Ponto de atenção</div>
+        <div class="ai-cruz-label">Ponto de atencao</div>
         <div class="ai-cruz-text">${c.atencao || ''}</div>
       </div>
     </div>
     <div class="ai-cruzamento-bottom">
-      <div class="ai-cruz-pill ai-cp-green">✅ CONTINUAR<br><span>${c.continuar || ''}</span></div>
-      <div class="ai-cruz-pill ai-cp-yellow">📝 MELHORAR<br><span>${c.melhorar || ''}</span></div>
-      <div class="ai-cruz-pill ai-cp-red">🔴 PARAR / REDIRECIONAR<br><span>${c.parar || ''}</span></div>
+      <div class="ai-cruz-pill ai-cp-green">CONTINUAR<br><span>${c.continuar || ''}</span></div>
+      <div class="ai-cruz-pill ai-cp-yellow">MELHORAR<br><span>${c.melhorar || ''}</span></div>
+      <div class="ai-cruz-pill ai-cp-red">PARAR<br><span>${c.parar || ''}</span></div>
     </div>
   </div>`;
 }
@@ -138,81 +133,88 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-// Patch the AI button on load
-document.addEventListener('DOMContentLoaded', () => {
-  // Re-attach after dashboard renders (it re-renders on loadDashboard)
-  const observer = new MutationObserver(() => {
-    const btn = document.getElementById('btnAiAnalysis');
-    if (btn && !btn.__aiPatched) {
-      btn.__aiPatched = true;
-      btn.textContent = '\u{1F916} Relatório IA';
-      btn.addEventListener('click', async () => {
-        // Collect payload from cached dashboard data
-        const activeId = localStorage.getItem('ig_active_account');
-        const days = localStorage.getItem('ig_selected_days') || '30';
-        const cacheKey = 'ig_cache_' + activeId + '_' + days + 'd';
-        if (!localStorage.getItem(cacheKey)) {
-          // fallback: try 30d
-          const fallback = 'ig_cache_' + activeId + '_30d';
-          if (!localStorage.getItem(fallback)) { alert('Carregue os dados primeiro.'); return; }
-        }
-        const finalKey = localStorage.getItem(cacheKey) ? cacheKey : 'ig_cache_' + (localStorage.getItem('ig_active_account') || '') + '_30d';
-        let data;
-        try { data = JSON.parse(localStorage.getItem(finalKey)); } catch { return; }
-        if (!data) { alert('Carregue os dados primeiro.'); return; }
-        const best = (data.postingHeatmap || []).reduce((b, h) => h.avgEng > (b ? b.avgEng : 0) ? h : b, null);
-        const days = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'];
-        const payload = {
-          username: data.account?.username,
-          periodo: data.periodo ? data.periodo.desde + ' a ' + data.periodo.ate : '30 dias',
-          seguidores: data.crescimento?.seguidoresTotal,
-          novosSeguidores: data.crescimento?.novosSeguidores,
-          alcance: data.alcance?.contasAlcancadas,
-          impressoes: data.alcance?.impressoes,
-          curtidas: data.engajamento?.curtidas,
-          comentarios: data.engajamento?.comentarios,
-          salvamentos: data.engajamento?.salvamentos,
-          compartilhamentos: data.engajamento?.compartilhamentos,
-          interacoesTotal: data.engajamento?.interacoesTotal,
-          taxaEngajamento: data.engajamento?.taxaEngajamento,
-          toquesLinkBio: data.acoesPerfil?.toquesLinkBio,
-          reels: data.conteudo?.reels,
-          carrosseis: data.conteudo?.carrosseis,
-          postsEstaticos: data.conteudo?.postsEstaticos,
-          stories: data.conteudo?.stories,
-          pctMulheres: data.audiencia?.pctMulheres,
-          pctHomens: data.audiencia?.pctHomens,
-          faixaEtaria: data.audiencia?.faixaEtaria,
-          cidades: data.audiencia?.cidades,
-          melhorHorario: best ? days[best.day] + ' ' + best.hour + 'h' : null,
-        };
-        btn.textContent = 'Analisando...';
-        btn.disabled = true;
-        try {
-          const res = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-          const result = await res.json();
-          if (result.error) throw new Error(result.error);
-          injectStyles();
-          const section = document.getElementById('aiAnalysisSection');
-          if (section) {
-            section.style.display = '';
-            section.innerHTML = result.sections
-              ? buildSectionsHTML(result.sections)
-              : `<div class="ai-text-fallback">${result.analysis || ''}</div>`;
-            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        } catch (err) {
-          alert('Erro: ' + err.message);
-        } finally {
-          btn.textContent = '\u{1F916} Relatório IA';
-          btn.disabled = false;
-        }
+function patchAiButton(btn) {
+  if (btn.__aiPatched) return;
+  // Clone to remove all old event listeners (incl. from dashboard-main.js)
+  const newBtn = btn.cloneNode(true);
+  btn.parentNode.replaceChild(newBtn, btn);
+  newBtn.__aiPatched = true;
+  newBtn.textContent = '\u{1F916} Relatorio IA';
+
+  newBtn.addEventListener('click', async () => {
+    const activeId = localStorage.getItem('ig_active_account');
+    const selectedDays = localStorage.getItem('ig_selected_days') || '30';
+    let cacheKey = 'ig_cache_' + activeId + '_' + selectedDays + 'd';
+    if (!localStorage.getItem(cacheKey)) cacheKey = 'ig_cache_' + activeId + '_30d';
+
+    let data;
+    try { data = JSON.parse(localStorage.getItem(cacheKey)); } catch { data = null; }
+    if (!data) { alert('Carregue os dados primeiro antes de gerar o relatorio.'); return; }
+
+    const best = (data.postingHeatmap || []).reduce((b, h) => h.avgEng > (b ? b.avgEng : 0) ? h : b, null);
+    const days = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'];
+    const payload = {
+      username: data.account?.username,
+      periodo: data.periodo ? (data.periodo.desde + ' a ' + data.periodo.ate) : selectedDays + ' dias',
+      seguidores: data.crescimento?.seguidoresTotal,
+      novosSeguidores: data.crescimento?.novosSeguidores,
+      alcance: data.alcance?.contasAlcancadas,
+      impressoes: data.alcance?.impressoes,
+      curtidas: data.engajamento?.curtidas,
+      comentarios: data.engajamento?.comentarios,
+      salvamentos: data.engajamento?.salvamentos,
+      compartilhamentos: data.engajamento?.compartilhamentos,
+      interacoesTotal: data.engajamento?.interacoesTotal,
+      taxaEngajamento: data.engajamento?.taxaEngajamento,
+      toquesLinkBio: data.acoesPerfil?.toquesLinkBio,
+      reels: data.conteudo?.reels,
+      carrosseis: data.conteudo?.carrosseis,
+      postsEstaticos: data.conteudo?.postsEstaticos,
+      stories: data.conteudo?.stories,
+      pctMulheres: data.audiencia?.pctMulheres,
+      pctHomens: data.audiencia?.pctHomens,
+      faixaEtaria: data.audiencia?.faixaEtaria,
+      cidades: data.audiencia?.cidades,
+      melhorHorario: best ? days[best.day] + ' ' + best.hour + 'h' : null,
+    };
+
+    newBtn.textContent = 'Analisando...';
+    newBtn.disabled = true;
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
+      const result = await res.json();
+      if (result.error) throw new Error(result.error);
+      injectStyles();
+      const section = document.getElementById('aiAnalysisSection');
+      if (section) {
+        section.style.display = '';
+        section.innerHTML = result.sections
+          ? buildSectionsHTML(result.sections)
+          : `<div class="ai-text-fallback">${result.analysis || ''}</div>`;
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    } catch (err) {
+      alert('Erro ao gerar relatorio: ' + err.message);
+    } finally {
+      newBtn.textContent = '\u{1F916} Relatorio IA';
+      newBtn.disabled = false;
     }
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+}
+
+// Observe DOM for button appearance (rendered dynamically by ui.js)
+const observer = new MutationObserver(() => {
+  const btn = document.getElementById('btnAiAnalysis');
+  if (btn && !btn.__aiPatched) patchAiButton(btn);
+});
+observer.observe(document.body, { childList: true, subtree: true });
+
+// Also try immediately on load
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('btnAiAnalysis');
+  if (btn && !btn.__aiPatched) patchAiButton(btn);
 });
