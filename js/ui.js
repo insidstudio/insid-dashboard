@@ -691,15 +691,6 @@ export function renderDashboard(data, deltas = null) {
       ${metricCard({ icon: '📷', value: cp.posts?.count ?? 0, label: 'Posts estáticos' })}
     </div>`);
 
-  // 5. Stories
-  const s5 = sectionWrap('Stories', 'Performance de Stories', `
-    <div class="cards-row">
-      ${metricCard({ icon: '🔥', value: storiesPerformance?.alcanceMedio ?? 0, label: 'Alcance Médio' })}
-      ${metricCard({ value: storiesPerformance?.retencaoPct ?? 0, label: 'Retenção', suffix: '%', isFloat: false, cssClass: 'accent' })}
-      ${metricCard({ value: storiesPerformance?.respostas ?? 0, label: 'Respostas' })}
-      ${metricCard({ icon: '📱', value: conteudo?.stories ?? 0, label: 'Stories publicados' })}
-    </div>`);
-
   // 6. Posting Heatmap
   const s6 = renderHeatmap(postingHeatmap);
 
