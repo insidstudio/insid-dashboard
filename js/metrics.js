@@ -123,8 +123,8 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
   const netFollowChange = netFollowsRaw?.data?.[0]?.total_value?.value ?? null;
 
   // follow_type breakdown: dimension_values = ['FOLLOW'] ou ['UNFOLLOW']
-  const followEntry = followsBreakdownData.find(r => r.dimension_values?.includes('FOLLOW'));
-  const unfollowEntry = followsBreakdownData.find(r => r.dimension_values?.includes('UNFOLLOW'));
+  const followEntry = followsBreakdownData.find(r => r.dimension_values?.includes('FOLLOWER') || r.dimension_values?.includes('FOLLOW'));
+  const unfollowEntry = followsBreakdownData.find(r => r.dimension_values?.includes('NON_FOLLOWER') || r.dimension_values?.includes('UNFOLLOW'));
 
   let novosSeguidores, unfollows;
   if (followEntry !== undefined || unfollowEntry !== undefined) {
