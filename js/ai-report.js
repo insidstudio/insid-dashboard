@@ -206,10 +206,45 @@ function patchAiButton(btn) {
   });
 }
 
+
+// ── Cloud sync button ─────────────────────────────────────────
+async function injectCloudSyncBtn() {
+  // Only if Supabase is configured
+  const { isCloudEnabled, forceSyncAllToCloud } = await import('/js/storage.js');
+  if (!isCloudEnabled()) return;
+
+  // Find the btnRefresh button to insert after it
+  const btnRefresh = document.getElementById('btnRefresh');
+  if (!btnRefresh || document.getElementById('btnCloudSync')) return;
+
+  const btn = document.createElement('button');
+  btn.id = 'btnCloudSync';
+  btn.textContent = '\u2601\uFE0F Salvar na nuvem';
+  btn.className = btnRefresh.className; // copy same style
+  btn.style.marginLeft = '8px';
+
+  btn.addEventListener('click', async () => {
+    btn.textContent = 'Salvando...';
+    btn.disabled = true;
+    try {
+      const count = await forceSyncAllToCloud();
+      btn.textContent = '\u2705 ' + count + ' conta(s) salvas!';
+      setTimeout(() => { btn.textContent = '\u2601\uFE0F Salvar na nuvem'; btn.disabled = false; }, 3000);
+    } catch (err) {
+      alert('Erro ao salvar na nuvem: ' + err.message + '\n\nVerifique se o projeto Supabase está ativo em supabase.com/dashboard');
+      btn.textContent = '\u2601\uFE0F Salvar na nuvem';
+      btn.disabled = false;
+    }
+  });
+
+  btnRefresh.parentNode.insertBefore(btn, btnRefresh.nextSibling);
+}
+
 // Observe DOM for button appearance (rendered dynamically by ui.js)
 const observer = new MutationObserver(() => {
   const btn = document.getElementById('btnAiAnalysis');
   if (btn && !btn.__aiPatched) patchAiButton(btn);
+  injectCloudSyncBtn();
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
@@ -217,4 +252,5 @@ observer.observe(document.body, { childList: true, subtree: true });
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('btnAiAnalysis');
   if (btn && !btn.__aiPatched) patchAiButton(btn);
+  injectCloudSyncBtn();
 });
