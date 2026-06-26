@@ -148,10 +148,18 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.textContent = '\u{1F916} Relatório IA';
       btn.addEventListener('click', async () => {
         // Collect payload from cached dashboard data
-        const cacheKey = Object.keys(localStorage).find(k => k.startsWith('ig_cache_') && k.endsWith('_30d'));
-        if (!cacheKey) { alert('Carregue os dados primeiro.'); return; }
+        const activeId = localStorage.getItem('ig_active_account');
+        const days = localStorage.getItem('ig_selected_days') || '30';
+        const cacheKey = 'ig_cache_' + activeId + '_' + days + 'd';
+        if (!localStorage.getItem(cacheKey)) {
+          // fallback: try 30d
+          const fallback = 'ig_cache_' + activeId + '_30d';
+          if (!localStorage.getItem(fallback)) { alert('Carregue os dados primeiro.'); return; }
+        }
+        const finalKey = localStorage.getItem(cacheKey) ? cacheKey : 'ig_cache_' + (localStorage.getItem('ig_active_account') || '') + '_30d';
         let data;
-        try { data = JSON.parse(localStorage.getItem(cacheKey)); } catch { return; }
+        try { data = JSON.parse(localStorage.getItem(finalKey)); } catch { return; }
+        if (!data) { alert('Carregue os dados primeiro.'); return; }
         const best = (data.postingHeatmap || []).reduce((b, h) => h.avgEng > (b ? b.avgEng : 0) ? h : b, null);
         const days = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'];
         const payload = {
