@@ -22,9 +22,6 @@ Formato de resposta (JSON exato, sem alteracao de chaves):
   "destaques": [
     {"titulo": "titulo curto", "valor": "numero ou %", "descricao": "1 frase explicando o que significa"}
   ],
-  "oportunidades": [
-    {"numero": 1, "titulo": "acao concreta", "porQue": "1-2 frases com dados especificos", "comoTestar": "acao pratica e mensuravel"}
-  ],
   "cruzamento": {
     "destaque": "principal conquista do periodo com numero",
     "atencao": "principal ponto de atencao com dado especifico",
@@ -33,7 +30,12 @@ Formato de resposta (JSON exato, sem alteracao de chaves):
     "parar": "o que esta consumindo recursos sem retorno"
   }
 }
-Limites: exatamente 3 destaques, 3 oportunidades, 5 ideias. Use dados reais dos numeros acima.`;
+RESTRICOES OBRIGATORIAS - nunca ignore:
+1. NAO mencione stories, reativar stories ou conteudo efemero (dados indisponiveis via API).
+2. NAO sugira diversificar audiencia por localizacao ou expandir para outras cidades. O publico local e intencional.
+3. Foque em engajamento, alcance, formato de conteudo e crescimento.
+
+Limites: exatamente 3 destaques. Use dados reais dos numeros acima.`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
