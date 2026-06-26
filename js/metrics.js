@@ -118,13 +118,25 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
     storyInsightsMap[s.id] = result.status === 'fulfilled' ? (result.value?.data ?? []) : [];
   });
 
-  // --- Crescimento (follows via chamada dedicada com breakdown=follow_type) ---
-  // A API retorna FOLLOWER + NON_FOLLOWER = total de follows do período
+  // --- Crescimento ---
   const followsBreakdownData = followsRaw?.data?.[0]?.total_value?.breakdowns?.[0]?.results ?? [];
-  const novosSeguidores = followsBreakdownData.reduce((acc, r) => acc + (r.value ?? 0), 0);
-  // A API v25 não expõe unfollows separadamente — retornamos null para indicar indisponível
   const netFollowChange = netFollowsRaw?.data?.[0]?.total_value?.value ?? null;
-  const unfollows = null;
+
+  // follow_type breakdown: dimension_values = ['FOLLOW'] ou ['UNFOLLOW']
+  const followEntry = followsBreakdownData.find(r => r.dimension_values?.includes('FOLLOW'));
+  const unfollowEntry = followsBreakdownData.find(r => r.dimension_values?.includes('UNFOLLOW'));
+
+  let novosSeguidores, unfollows;
+  if (followEntry !== undefined || unfollowEntry !== undefined) {
+    novosSeguidores = followEntry?.value ?? 0;
+    unfollows = unfollowEntry?.value ?? null;
+  } else {
+    // Fallback FOLLOWER/NON_FOLLOWER: ambos sao follows, derivamos unfollows pela variacao liquida
+    novosSeguidores = followsBreakdownData.reduce((acc, r) => acc + (r.value ?? 0), 0);
+    unfollows = (netFollowChange !== null && novosSeguidores > 0)
+      ? Math.max(0, novosSeguidores - netFollowChange)
+      : null;
+  }
   const seguidoresTotal = accountInfo?.followers_count ?? 0;
 
   // --- Alcance ---
