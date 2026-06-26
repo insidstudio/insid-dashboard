@@ -1,106 +1,72 @@
-const https = require('https');
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set' });
 
-function callClaude(systemPrompt, userMessage) {
-  return new Promise((resolve, reject) => {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return reject(new Error('ANTHROPIC_API_KEY not configured'));
+  const d = req.body;
+  const fmt = (n) => n != null ? Number(n).toLocaleString('pt-BR') : 'N/D';
+  const cidades = (d.cidades || []).map(c => c.nome + ' ' + c.pct + '%').join(', ') || 'N/D';
 
-    const body = JSON.stringify({
-      model: 'claude-haiku-4-5',
-      max_tokens: 2048,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    });
+  const prompt = `Voce e um estrategista de social media para marcas brasileiras. Analise e responda SOMENTE com JSON valido, sem markdown nem texto extra.
 
-    const req = https.request({
-      hostname: 'api.anthropic.com',
-      path: '/v1/messages',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'Content-Length': Buffer.byteLength(body),
-      },
-    }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.error) return reject(new Error(parsed.error.message));
-          const text = parsed.content?.find(b => b.type === 'text')?.text || '';
-          resolve(text);
-        } catch (e) { reject(e); }
-      });
-    });
+DADOS @${d.username} (${d.periodo}):
+Seguidores: ${fmt(d.seguidores)} | Novos: ${fmt(d.novosSeguidores)} | Alcance: ${fmt(d.alcance)} | Impressoes: ${fmt(d.impressoes)}
+Curtidas: ${fmt(d.curtidas)} | Comentarios: ${fmt(d.comentarios)} | Salvamentos: ${fmt(d.salvamentos)} | Shares: ${fmt(d.compartilhamentos)}
+Engajamento: ${d.taxaEngajamento}% | Reels: ${d.reels} | Carrosseis: ${d.carrosseis} | Posts: ${d.postsEstaticos} | Stories: ${d.stories}
+Publico: ${d.pctMulheres}% mulheres, ${d.pctHomens}% homens, faixa ${d.faixaEtaria || 'N/D'}
+Cidades: ${cidades} | Melhor horario: ${d.melhorHorario || 'N/D'}
 
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
-}
-
-module.exports = async (req, res) => {
-  if (req.method !== 'POST') {
-    res.statusCode = 405;
-    res.end(JSON.stringify({ error: 'Method not allowed' }));
-    return;
+Formato de resposta (JSON exato, sem alteracao de chaves):
+{
+  "resumo": "3-4 frases executivas com os principais numeros e tendencias do periodo",
+  "destaques": [
+    {"titulo": "titulo curto", "valor": "numero ou %", "descricao": "1 frase explicando o que significa"}
+  ],
+  "oportunidades": [
+    {"numero": 1, "titulo": "acao concreta", "porQue": "1-2 frases com dados especificos", "comoTestar": "acao pratica e mensuravel"}
+  ],
+  "ideias": [
+    {"numero": 1, "formato": "REEL", "titulo": "titulo exato do conteudo", "descricao": "1-2 frases explicando o angulo e por que vai performar"}
+  ],
+  "cruzamento": {
+    "destaque": "principal conquista do periodo com numero",
+    "atencao": "principal ponto de atencao com dado especifico",
+    "continuar": "o que esta funcionando e deve continuar",
+    "melhorar": "o que pode ser otimizado",
+    "parar": "o que esta consumindo recursos sem retorno"
   }
-
-  let body = '';
-  for await (const chunk of req) body += chunk;
-
-  let metrics;
-  try { metrics = JSON.parse(body); }
-  catch { res.statusCode = 400; res.end(JSON.stringify({ error: 'Invalid JSON' })); return; }
-
-  const systemPrompt = `Voce e um consultor de marketing digital especialista em Instagram.
-Analise as metricas fornecidas e gere um relatorio conciso em portugues brasileiro com:
-
-1. RESUMO EXECUTIVO (2-3 frases sobre a saude geral do perfil)
-2. PONTOS FORTES (2-3 itens com dados especificos)
-3. PONTOS DE ATENCAO (2-3 itens com dados e benchmarks)
-4. PLANO DE ACAO (3-5 acoes concretas priorizadas para o proximo mes)
-
-Use os benchmarks:
-- Taxa de engajamento boa: acima de 3%
-- Save rate saudavel: acima de 2%
-- Share rate bom: acima de 1%
-
-Seja direto, use numeros, e de recomendacoes acionaveis. Nao use markdown com # ou **, use texto limpo.`;
-
-  const m = metrics;
-  const userMessage = `Perfil: @${m.username || 'desconhecido'}
-Periodo: ${m.periodo || '30 dias'}
-Seguidores: ${m.seguidores || 0}
-Novos seguidores: ${m.novosSeguidores || 0}
-Alcance: ${m.alcance || 0}
-Impressoes: ${m.impressoes || 0}
-Curtidas: ${m.curtidas || 0}
-Comentarios: ${m.comentarios || 0}
-Salvamentos: ${m.salvamentos || 0}
-Compartilhamentos: ${m.compartilhamentos || 0}
-Interacoes total: ${m.interacoesTotal || 0}
-Taxa de engajamento: ${m.taxaEngajamento || 0}%
-Toques link bio: ${m.toquesLinkBio || 0}
-Reels publicados: ${m.reels || 0}
-Carrosseis publicados: ${m.carrosseis || 0}
-Posts estaticos: ${m.postsEstaticos || 0}
-Stories: ${m.stories || 0}
-Audiencia: ${m.pctMulheres || 0}% mulheres, ${m.pctHomens || 0}% homens
-Faixa etaria principal: ${m.faixaEtaria || 'desconhecida'}
-Top cidades: ${(m.cidades || []).map(c => c.nome + ' ' + c.pct + '%').join(', ') || 'sem dados'}
-Melhor horario: ${m.melhorHorario || 'sem dados'}`;
+}
+Limites: exatamente 3 destaques, 3 oportunidades, 5 ideias. Use dados reais dos numeros acima.`;
 
   try {
-    const analysis = await callClaude(systemPrompt, userMessage);
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.end(JSON.stringify({ analysis }));
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2048,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) return res.status(500).json({ error: result.error?.message || 'API error' });
+
+    const text = (result.content?.[0]?.text || '').trim();
+    // Strip markdown code fences if present
+    const clean = text.replace(/^```json?\n?/, '').replace(/\n?```$/, '').trim();
+
+    try {
+      const parsed = JSON.parse(clean);
+      return res.status(200).json({ sections: parsed, analysis: parsed.resumo });
+    } catch {
+      return res.status(200).json({ analysis: text });
+    }
   } catch (err) {
-    res.statusCode = 500;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: err.message }));
+    return res.status(500).json({ error: err.message });
   }
-};
+}
