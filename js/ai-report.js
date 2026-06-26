@@ -10,19 +10,6 @@ function buildSectionsHTML(s) {
       <div class="ai-card-desc">${d.descricao}</div>
     </div>`).join('');
 
-  const ideiasHTML = (s.ideias || []).map(i => {
-    const cor = badges[i.formato] || '#C8A96E';
-    return `
-    <div class="ai-ideia">
-      <div class="ai-ideia-header">
-        <span class="ai-ideia-num">0${i.numero}</span>
-        <span class="ai-ideia-badge" style="background:${cor}22;color:${cor}">${i.formato}</span>
-      </div>
-      <div class="ai-ideia-title">${i.titulo}</div>
-      <div class="ai-ideia-desc">${i.descricao}</div>
-    </div>`;
-  }).join('');
-
   const c = s.cruzamento || {};
   return `
   <div class="ai-report-wrap">
