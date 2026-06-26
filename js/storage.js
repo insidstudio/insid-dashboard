@@ -199,3 +199,24 @@ export function saveUserInfo(userId, username) {
   localStorage.setItem(KEYS.USER_ID, userId);
   localStorage.setItem(KEYS.USERNAME, username);
 }
+
+// ── Force sync all local accounts to Supabase ────────────────
+export async function forceSyncAllToCloud() {
+  if (!isCloudEnabled()) throw new Error('Supabase não configurado');
+  const accounts = getAccounts();
+  if (accounts.length === 0) throw new Error('Nenhuma conta para sincronizar');
+  const rows = accounts.map(a => ({
+    id: a.id,
+    label: a.label,
+    token: a.token,
+    user_id: a.userId,
+    username: a.username,
+    profile_picture: a.profilePicture,
+    token_created: a.tokenCreated,
+  }));
+  const { error } = await getSupabase()
+    .from('accounts')
+    .upsert(rows, { onConflict: 'id' });
+  if (error) throw new Error(error.message);
+  return accounts.length;
+}
