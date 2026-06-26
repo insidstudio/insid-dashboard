@@ -22,8 +22,8 @@ Formato de resposta (JSON exato, sem alteracao de chaves):
   "destaques": [
     {"titulo": "titulo curto", "valor": "numero ou %", "descricao": "1 frase explicando o que significa"}
   ],
-  "ideias": [
-    {"numero": 1, "formato": "REEL", "titulo": "titulo exato do conteudo", "descricao": "1-2 frases explicando o angulo e por que vai performar"}
+  "oportunidades": [
+    {"numero": 1, "titulo": "acao concreta", "porQue": "1-2 frases com dados especificos", "comoTestar": "acao pratica e mensuravel"}
   ],
   "cruzamento": {
     "destaque": "principal conquista do periodo com numero",
@@ -33,7 +33,7 @@ Formato de resposta (JSON exato, sem alteracao de chaves):
     "parar": "o que esta consumindo recursos sem retorno"
   }
 }
-Limites: exatamente 3 destaques, 5 ideias. Use dados reais dos numeros acima.`;
+Limites: exatamente 3 destaques, 3 oportunidades, 5 ideias. Use dados reais dos numeros acima.`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
