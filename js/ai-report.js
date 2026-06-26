@@ -10,18 +10,6 @@ function buildSectionsHTML(s) {
       <div class="ai-card-desc">${d.descricao}</div>
     </div>`).join('');
 
-  const opHTML = (s.oportunidades || []).map(o => `
-    <div class="ai-oportunidade">
-      <div class="ai-op-num">${o.numero}</div>
-      <div class="ai-op-body">
-        <div class="ai-op-title">${o.titulo}</div>
-        <div class="ai-op-tag">POR QUE</div>
-        <div class="ai-op-text">${o.porQue}</div>
-        <div class="ai-op-tag">COMO TESTAR</div>
-        <div class="ai-op-text">${o.comoTestar}</div>
-      </div>
-    </div>`).join('');
-
   const ideiasHTML = (s.ideias || []).map(i => {
     const cor = badges[i.formato] || '#C8A96E';
     return `
@@ -46,13 +34,6 @@ function buildSectionsHTML(s) {
       <div class="ai-resumo-text">${s.resumo || ''}</div>
       <div class="ai-cards-sm">${destacadosHTML}</div>
     </div>
-
-    <div class="ai-section-divider"></div>
-    <div class="ai-report-header">
-      <div class="section-eyebrow">OPORTUNIDADES NAO EXPLORADAS</div>
-      <h2 class="section-title">O que fazer agora</h2>
-    </div>
-    <div class="ai-oportunidades">${opHTML}</div>
 
     <div class="ai-section-divider"></div>
     <div class="ai-report-header">
