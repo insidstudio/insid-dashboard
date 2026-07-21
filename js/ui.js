@@ -749,7 +749,7 @@ export function renderDashboard(data, deltas = null) {
     </div>
   </div>`;
 
-  dashboard.innerHTML = s1 + s2 + chartsSection + s4 + s5 + s6 + s7 + s8 + s9 + aiSection + evolutionSection;
+  dashboard.innerHTML = s1 + s2 + chartsSection + s4 + s6 + s7 + s8 + s9 + aiSection + evolutionSection;
 
   // Init charts and counters after DOM is ready
   requestAnimationFrame(() => {
