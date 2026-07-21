@@ -12,7 +12,7 @@ export default async function handler(req, res) {
 DADOS @${d.username} (${d.periodo}):
 Seguidores: ${fmt(d.seguidores)} | Novos: ${fmt(d.novosSeguidores)} | Alcance: ${fmt(d.alcance)} | Impressoes: ${fmt(d.impressoes)}
 Curtidas: ${fmt(d.curtidas)} | Comentarios: ${fmt(d.comentarios)} | Salvamentos: ${fmt(d.salvamentos)} | Shares: ${fmt(d.compartilhamentos)}
-Engajamento: ${d.taxaEngajamento}% | Reels: ${d.reels} | Carrosseis: ${d.carrosseis} | Posts: ${d.postsEstaticos} | Stories: ${d.stories}
+Engajamento: ${d.taxaEngajamento}% | Reels: ${d.reels} | Carrosseis: ${d.carrosseis} | Posts: ${d.postsEstaticos}
 Publico: ${d.pctMulheres}% mulheres, ${d.pctHomens}% homens, faixa ${d.faixaEtaria || 'N/D'}
 Cidades: ${cidades} | Melhor horario: ${d.melhorHorario || 'N/D'}
 
