@@ -112,6 +112,10 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.url === '/api/insid-sync' && req.method === 'POST') {
+    return require('./api/insid-sync.js')(req, res);
+  }
+
   if (req.url === '/api/analyze' && req.method === 'POST') {
     const analyze = require('./api/analyze');
     analyze(req, res);

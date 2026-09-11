@@ -50,7 +50,10 @@ export async function saveSnapshot(accountId, data) {
   const duplicate = existing.find(s => s.date === today && s.days === days);
   if (duplicate) {
     const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put({ ...duplicate, kpis: extractKPIs(data), updatedAt: new Date().toISOString() });
+    const atualizado = { ...duplicate, kpis: extractKPIs(data), updatedAt: new Date().toISOString() };
+    tx.objectStore(STORE_NAME).put(atualizado);
+    _cloudSaveSnapshot(atualizado);
+    _insidSaveSnapshot(atualizado);
     return;
   }
 
@@ -66,6 +69,48 @@ export async function saveSnapshot(accountId, data) {
   const tx = db.transaction(STORE_NAME, 'readwrite');
   tx.objectStore(STORE_NAME).add(snapshot);
   _cloudSaveSnapshot(snapshot);
+  _insidSaveSnapshot(snapshot);
+}
+
+/**
+ * Sobe a coleta pro Sistema INSID. Quem guarda a chave é o servidor daqui
+ * (/api/insid-sync), então o navegador nunca vê segredo nenhum.
+ *
+ * Falhar aqui não pode quebrar o dashboard: o histórico local já foi gravado
+ * antes desta chamada. Mas falhar calado foi o que escondeu o Supabase morto
+ * por meses, então o erro vai pro console.
+ */
+async function _insidSaveSnapshot(snapshot) {
+  const username = _usernameDaConta(snapshot.accountId);
+  if (!username) return;
+  try {
+    const r = await fetch('/api/insid-sync', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        username,
+        date: snapshot.date,
+        days: snapshot.days,
+        kpis: snapshot.kpis,
+      }),
+    });
+    if (!r.ok) {
+      // 501 é o caso normal de quem ainda não configurou a ponte.
+      if (r.status !== 501) console.warn('[insid] coleta não subiu:', r.status, await r.text());
+    }
+  } catch (e) {
+    console.warn('[insid] Sistema INSID fora do ar:', e);
+  }
+}
+
+function _usernameDaConta(accountId) {
+  try {
+    const contas = JSON.parse(localStorage.getItem('ig_accounts') || '[]');
+    const conta = contas.find((c) => c.id === accountId);
+    return (conta?.username || localStorage.getItem('ig_username') || '').replace(/^@/, '');
+  } catch {
+    return '';
+  }
 }
 
 async function _cloudSaveSnapshot(snapshot) {
