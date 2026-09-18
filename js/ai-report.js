@@ -1,7 +1,7 @@
 // ai-report.js — Relatorio IA sob demanda com secoes estruturadas
 
 function buildSectionsHTML(s) {
-  const badges = { REEL: '#7ec8a0', CARROSSEL: '#88b0cc', STORY: '#C8A96E' };
+  const badges = { REEL: '#2E2E32', CARROSSEL: '#55555C', STORY: '#8E8E96' };
 
   const destacadosHTML = (s.destaques || []).map(d => `
     <div class="ai-card-sm">
@@ -65,12 +65,12 @@ function injectStyles() {
   .ai-op-num{width:32px;height:32px;border-radius:50%;background:var(--berry);color:var(--cream);font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .ai-op-body{flex:1}
   .ai-op-title{font-size:15px;font-weight:600;color:var(--text-primary);margin-bottom:10px}
-  .ai-op-tag{font-size:9px;font-weight:700;letter-spacing:.9px;color:var(--rose-gold);text-transform:uppercase;margin:8px 0 4px;background:rgba(200,169,110,.1);border-radius:4px;padding:2px 6px;display:inline-block}
+  .ai-op-tag{font-size:9px;font-weight:700;letter-spacing:.9px;color:var(--rose-gold);text-transform:uppercase;margin:8px 0 4px;background:rgba(46,46,50,.08);border-radius:4px;padding:2px 6px;display:inline-block}
   .ai-op-text{font-size:13px;color:var(--text-secondary);line-height:1.6}
   .ai-cruzamento-top{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
   .ai-cruz-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px}
   .ai-cruz-destaque{border-color:rgba(126,200,160,.3);background:rgba(126,200,160,.05)}
-  .ai-cruz-atencao{border-color:rgba(200,169,110,.3);background:rgba(200,169,110,.05)}
+  .ai-cruz-atencao{border-color:rgba(138,97,0,.28);background:rgba(138,97,0,.05)}
   .ai-cruz-label{font-size:11px;font-weight:700;color:var(--accent);margin-bottom:10px}
   .ai-cruz-text{font-size:13px;color:var(--text-secondary);line-height:1.6}
   .ai-cruzamento-bottom{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}

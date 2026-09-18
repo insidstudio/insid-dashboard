@@ -2,6 +2,8 @@
 //  ui.js — Render helpers for the Instagram Dashboard
 // ============================================================
 
+import { computeRecomendacoes } from './recomendacoes.js';
+
 let _chartInstances = {};
 
 function escapeHtml(str) {
@@ -31,7 +33,7 @@ function animateCounter(el) {
     const current = raw * eased;
 
     if (isFloat) {
-      el.textContent = current.toFixed(1) + suffix;
+      el.textContent = current.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + suffix;
     } else {
       el.textContent = formatNumber(Math.round(current)) + suffix;
     }
@@ -46,6 +48,11 @@ function animateAllCounters() {
   document.querySelectorAll('[data-counter]').forEach(el => animateCounter(el));
 }
 
+/** Decimal no padrao pt-BR: 1.1 vira "1,1". */
+function dec(v) {
+  return Number(v ?? 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+}
+
 function trendHtml(value, label = '') {
   if (value === 0 || value == null) return '';
   const dir = value > 0 ? 'up' : 'down';
@@ -53,7 +60,27 @@ function trendHtml(value, label = '') {
   return `<span class="metric-trend ${dir}">${arrow} ${Math.abs(value)}% ${escapeHtml(label)}</span>`;
 }
 
-function metricCard({ icon, value, label, cssClass = '', suffix = '', isFloat = false, trend = null }) {
+/**
+ * Selo "+143 · +2,0%" comparando com o período anterior.
+ *
+ * Só renderiza quando há base de comparação: sem período anterior, `pct` vem
+ * null e o card fica sem selo, em vez de exibir "+100%" ou "0%", que seriam
+ * lidos como fato pelo cliente.
+ */
+function comparativoHtml(cmp) {
+  if (!cmp || cmp.pct == null) return '';
+  // Variação zero vira selo neutro: "↑ +0 · 0%" sugere alta onde não houve nenhuma.
+  if (cmp.pct === 0) return '<span class="metric-trend neutral">sem variação</span>';
+  const dir = cmp.pct > 0 ? 'up' : 'down';
+  const seta = cmp.pct > 0 ? '↑' : '↓';
+  const abs = cmp.absoluto != null && cmp.absoluto !== 0
+    ? (cmp.absoluto > 0 ? '+' : '−') + Math.abs(cmp.absoluto).toLocaleString('pt-BR') + ' · '
+    : '';
+  const pct = Math.abs(cmp.pct).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  return `<span class="metric-trend ${dir}">${seta} ${abs}${pct}%</span>`;
+}
+
+function metricCard({ icon, value, label, cssClass = '', suffix = '', isFloat = false, trend = null, cmp = null }) {
   const numVal = typeof value === 'number' ? value : 0;
   const displayVal = typeof value === 'string' ? escapeHtml(value) : formatNumber(numVal);
   const classAttr = cssClass ? ` ${escapeHtml(cssClass)}` : '';
@@ -65,7 +92,7 @@ function metricCard({ icon, value, label, cssClass = '', suffix = '', isFloat = 
     ${icon ? `<div class="metric-icon">${escapeHtml(icon)}</div>` : ''}
     <span class="metric-value${classAttr}" ${dataAttr}>${displayVal}${escapeHtml(suffix)}</span>
     <span class="metric-label">${escapeHtml(label)}</span>
-    ${trend !== null ? trendHtml(trend) : ''}
+    ${cmp ? comparativoHtml(cmp) : (trend !== null ? trendHtml(trend) : '')}
   </div>`;
 }
 
@@ -180,85 +207,130 @@ export function renderHeader(data, days = 30, periodo = null, accounts = [], act
 //  CHARTS
 // ============================================================
 
-function destroyCharts() {
-  Object.values(_chartInstances).forEach(c => { try { c.destroy(); } catch (_) {} });
-  _chartInstances = {};
+/**
+ * Le um token de cor do CSS.
+ *
+ * Os graficos passam a seguir a paleta definida em :root, entao trocar o tema
+ * no CSS nao exige mexer em nenhuma cor aqui dentro.
+ */
+function token(nome, alternativa = '#55555C') {
+  if (typeof getComputedStyle === 'undefined') return alternativa;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
+  return v || alternativa;
 }
 
-function initCharts(weeklyData, conteudo) {
+/**
+ * Destroi apenas os graficos indicados.
+ *
+ * Antes isto apagava TODOS os graficos. Como initCharts roda dentro de um
+ * requestAnimationFrame e initEvolutionCharts roda quando a promise do
+ * IndexedDB resolve, quem chegasse primeiro era apagado pelo outro — e os
+ * quatro graficos de evolucao sumiam de forma intermitente.
+ */
+function destroyCharts(chaves) {
+  chaves.forEach(k => {
+    const c = _chartInstances[k];
+    if (!c) return;
+    try { c.destroy(); } catch (_) {}
+    delete _chartInstances[k];
+  });
+}
+
+const CHARTS_PERIODO = ['engagementTrend', 'content'];
+const CHARTS_EVOLUCAO = ['evoFollowers', 'evoReach', 'evoEngagement', 'evoInteractions'];
+
+function initCharts(engagementTrend, conteudo, trendMeta) {
   if (typeof Chart === 'undefined') return;
 
-  destroyCharts();
+  destroyCharts(CHARTS_PERIODO);
 
   if (typeof ChartDataLabels !== 'undefined') {
     Chart.register(ChartDataLabels);
   }
 
-  Chart.defaults.color = 'rgba(255, 247, 236, 0.58)';
+  Chart.defaults.color = token('--text-secondary');
   Chart.defaults.font.family = "'Inter', sans-serif";
   Chart.defaults.font.size = 11;
 
   const tooltipDefaults = {
-    backgroundColor: 'rgba(13, 8, 7, 0.92)',
-    titleColor: '#FFF7EC',
-    bodyColor: 'rgba(255, 247, 236, 0.72)',
-    borderColor: 'rgba(196, 144, 142, 0.3)',
+    backgroundColor: token('--tooltip-bg'),
+    titleColor: token('--tooltip-text'),
+    bodyColor: token('--tooltip-body'),
+    borderColor: token('--border-strong'),
     borderWidth: 1,
     padding: 10,
     cornerRadius: 10,
   };
 
-  const gridColor = 'rgba(255, 247, 236, 0.05)';
-  const tickColor = 'rgba(255, 247, 236, 0.45)';
+  const gridColor = token('--chart-grid');
+  const tickColor = token('--chart-tick');
 
-  // Chart 1: Engajamento semanal
-  const ctx1 = document.getElementById('chartWeekly');
-  if (ctx1 && weeklyData?.length) {
-    _chartInstances.weekly = new Chart(ctx1, {
-      type: 'bar',
+  // Chart 1: Crescimento do engajamento médio (30 dias)
+  const ctx1 = document.getElementById('chartEngagementTrend');
+  if (ctx1 && engagementTrend?.length) {
+    const lastIndex = engagementTrend.length - 1;
+    const gradient = ctx1.getContext('2d').createLinearGradient(0, 0, 0, ctx1.height || 260);
+    gradient.addColorStop(0, token('--chart-area'));
+    gradient.addColorStop(1, 'rgba(46, 46, 50, 0)');
+
+    _chartInstances.engagementTrend = new Chart(ctx1, {
+      type: 'line',
       data: {
-        labels: weeklyData.map(w => w.label),
-        datasets: [
-          {
-            label: 'Curtidas',
-            data: weeklyData.map(w => w.curtidas),
-            backgroundColor: 'rgba(196, 144, 142, 0.85)',
-            borderRadius: 6,
-            borderSkipped: false,
-          },
-          {
-            label: 'Saves',
-            data: weeklyData.map(w => w.saves),
-            backgroundColor: 'rgba(245, 203, 215, 0.75)',
-            borderRadius: 6,
-            borderSkipped: false,
-          },
-          {
-            label: 'Shares',
-            data: weeklyData.map(w => w.shares),
-            backgroundColor: 'rgba(116, 30, 49, 0.85)',
-            borderRadius: 6,
-            borderSkipped: false,
-          },
-        ],
+        labels: engagementTrend.map(p => p.label),
+        datasets: [{
+          label: 'Engajamento médio por post',
+          data: engagementTrend.map(p => p.mediaEngajamento),
+          borderColor: token('--chart-1'),
+          backgroundColor: gradient,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.35,
+          pointRadius: ctx => ctx.dataIndex === lastIndex ? 4 : 0,
+          pointHoverRadius: 5,
+          pointBackgroundColor: token('--chart-1'),
+          pointBorderColor: token('--bg'),
+          pointBorderWidth: 2,
+        }],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        // Espaço à direita/topo para o rótulo do último ponto não ser cortado.
+        layout: { padding: { right: 32, top: 14 } },
         plugins: {
-          legend: { labels: { color: tickColor, boxWidth: 12, padding: 16 } },
-          tooltip: tooltipDefaults,
+          legend: { display: false },
+          tooltip: {
+            ...tooltipDefaults,
+            callbacks: {
+              label: ctx => `${ctx.parsed.y} interações/post (média ${trendMeta?.janela ?? 7} dias)`,
+              afterLabel: ctx => {
+                const p = engagementTrend[ctx.dataIndex];
+                return p?.postsNoDia ? `${p.postsNoDia} post(s) publicado(s)` : '';
+              },
+            },
+          },
           datalabels: {
+            display: ctx => ctx.dataIndex === lastIndex && ctx.dataset.data[ctx.dataIndex] > 0,
             anchor: 'end',
             align: 'top',
-            color: 'rgba(255, 247, 236, 0.75)',
-            font: { size: 10, weight: '600' },
-            formatter: v => v > 0 ? (v >= 1000 ? (v / 1000).toFixed(1) + 'K' : v) : '',
+            offset: 4,
+            clamp: true,
+            color: token('--text-primary'),
+            font: { size: 11, weight: '700' },
+            formatter: v => v >= 1000 ? (v / 1000).toFixed(1) + 'K' : v,
           },
         },
         scales: {
-          x: { grid: { color: gridColor }, ticks: { color: tickColor } },
-          y: { grid: { color: gridColor }, ticks: { color: tickColor } },
+          x: {
+            grid: { display: false },
+            ticks: { color: tickColor, autoSkip: true, maxTicksLimit: 7, maxRotation: 0 },
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: gridColor },
+            ticks: { color: tickColor },
+          },
         },
       },
     });
@@ -275,8 +347,8 @@ function initCharts(weeklyData, conteudo) {
         labels: ['Reels', 'Carrosséis', 'Posts', 'Stories'],
         datasets: [{
           data: [reels, carrosseis, postsEstaticos, stories],
-          backgroundColor: ['#C8A96E', '#C8A96E', '#E8D5AE', '#A0A0A0'],
-          borderColor: 'rgba(13, 8, 7, 0.5)',
+          backgroundColor: [token('--chart-1'), token('--chart-2'), token('--chart-3'), token('--chart-4')],
+          borderColor: token('--bg'),
           borderWidth: 2,
           hoverOffset: 8,
         }],
@@ -289,7 +361,7 @@ function initCharts(weeklyData, conteudo) {
           legend: { position: 'bottom', labels: { color: tickColor, boxWidth: 12, padding: 14 } },
           tooltip: tooltipDefaults,
           datalabels: {
-            color: 'rgba(255, 247, 236, 0.9)',
+            color: token('--bg'),
             font: { size: 11, weight: '700' },
             formatter: (v) => {
               const pct = total > 0 ? Math.round(v / total * 100) : 0;
@@ -368,19 +440,19 @@ function renderAudience(audiencia) {
       <div class="gender-row">
         <div class="gender-header">
           <span class="gender-label">Mulheres</span>
-          <span class="gender-value female">${pctMulheres}%</span>
+          <span class="gender-value female">${dec(pctMulheres)}%</span>
         </div>
         <div class="progress-bar">
-          <div class="progress-bar-fill female" style="width:${pctMulheres}%"></div>
+          <div class="progress-bar-fill female" style="width:${dec(pctMulheres)}%"></div>
         </div>
       </div>
       <div class="gender-row">
         <div class="gender-header">
           <span class="gender-label">Homens</span>
-          <span class="gender-value male">${pctHomens}%</span>
+          <span class="gender-value male">${dec(pctHomens)}%</span>
         </div>
         <div class="progress-bar">
-          <div class="progress-bar-fill male" style="width:${pctHomens}%"></div>
+          <div class="progress-bar-fill male" style="width:${dec(pctHomens)}%"></div>
         </div>
       </div>
     </div>
@@ -391,9 +463,9 @@ function renderAudience(audiencia) {
       <div class="city-row">
         <span class="city-rank">${i + 1}</span>
         <span class="city-name">${escapeHtml(c.nome)}</span>
-        <span class="city-pct">${c.pct}%</span>
+        <span class="city-pct">${dec(c.pct)}%</span>
       </div>
-      <div class="city-bar"><div class="city-bar-fill" style="width:${c.pct}%"></div></div>
+      <div class="city-bar"><div class="city-bar-fill" style="width:${dec(c.pct)}%"></div></div>
     </div>`).join('');
 
   const citiesCard = `<div class="glass-card">
@@ -427,80 +499,8 @@ function renderAudience(audiencia) {
 // ============================================================
 
 function renderAnalysis(data) {
-  const { engajamento, alcance, crescimento, contentPerformance, storiesPerformance } = data;
-
-  const reach = alcance?.contasAlcancadas ?? 0;
-  const saves = engajamento?.salvamentos ?? 0;
-  const shares = engajamento?.compartilhamentos ?? 0;
-  const taxaEng = engajamento?.taxaEngajamento ?? 0;
-  const novosSegs = crescimento?.novosSeguidores ?? 0;
-
-  const saveRate = reach > 0 ? Math.round((saves / reach) * 1000) / 10 : 0;
-  const shareRate = reach > 0 ? Math.round((shares / reach) * 1000) / 10 : 0;
-
-  const cp = contentPerformance ?? {};
-  const formats = [
-    { name: 'Reels', avgViews: cp.reels?.avgViews ?? 0, avgLikes: cp.reels?.avgLikes ?? 0, avgSaves: cp.reels?.avgSaves ?? 0, count: cp.reels?.count ?? 0 },
-    { name: 'Carrosséis', avgViews: cp.carrosseis?.avgViews ?? 0, avgLikes: cp.carrosseis?.avgLikes ?? 0, avgSaves: cp.carrosseis?.avgSaves ?? 0, count: cp.carrosseis?.count ?? 0 },
-    { name: 'Posts', avgViews: cp.posts?.avgViews ?? 0, avgLikes: cp.posts?.avgLikes ?? 0, avgSaves: cp.posts?.avgSaves ?? 0, count: cp.posts?.count ?? 0 },
-  ].filter(f => f.count > 0);
-
-  const bestReach = formats.length > 0 ? formats.reduce((b, f) => f.avgViews > b.avgViews ? f : b, formats[0]) : null;
-  const bestSaves = formats.length > 0 ? formats.reduce((b, f) => f.avgSaves > b.avgSaves ? f : b, formats[0]) : null;
-  const worstReach = formats.length > 1 ? [...formats].sort((a, b) => a.avgViews - b.avgViews)[0] : null;
-
-  const continuar = [];
-  const melhorar = [];
-  const parar = [];
-
-  // --- Continuar ---
-  if (bestReach && formats.length > 1) {
-    continuar.push(`<strong>${bestReach.name}</strong> lideram em alcance médio (${formatNumber(bestReach.avgViews)} por publicação) — continuar priorizando esse formato.`);
-  }
-  if (saveRate >= 2) {
-    continuar.push(`Save rate em <strong>${saveRate}%</strong> — acima da referência de 2%. O conteúdo está gerando autoridade. Manter a abordagem.`);
-  }
-  if (taxaEng >= 3) {
-    continuar.push(`Taxa de engajamento em <strong>${taxaEng}%</strong> — dentro do benchmark ideal. Manter frequência e qualidade.`);
-  }
-  if ((storiesPerformance?.retencaoPct ?? 0) >= 70) {
-    continuar.push(`Retenção de stories em <strong>${storiesPerformance.retencaoPct}%</strong> — sequências funcionando bem. Continuar com stories regulares.`);
-  }
-  if (novosSegs > 0) {
-    continuar.push(`<strong>${formatNumber(novosSegs)} novos seguidores</strong> no período — a estratégia de atração está funcionando.`);
-  }
-
-  // --- Melhorar ---
-  if (saveRate < 2 && reach > 0) {
-    melhorar.push(`Save rate em <strong>${saveRate}%</strong> (referência: acima de 2%) — criar conteúdos mais didáticos, completos ou com passo a passo para estimular salvamentos.`);
-  }
-  if (shareRate < 1 && reach > 0) {
-    melhorar.push(`Share rate em <strong>${shareRate}%</strong> (referência: acima de 1%) — apostar em conteúdos de opinião forte, listas e comparações que o público queira compartilhar.`);
-  }
-  if (taxaEng > 0 && taxaEng < 3) {
-    melhorar.push(`Taxa de engajamento em <strong>${taxaEng}%</strong> — abaixo do ideal. Revisar CTAs e incluir perguntas nos posts para estimular comentários.`);
-  }
-  if ((storiesPerformance?.retencaoPct ?? 0) > 0 && storiesPerformance.retencaoPct < 60) {
-    melhorar.push(`Retenção de stories em <strong>${storiesPerformance.retencaoPct}%</strong> — reduzir para 3-5 stories por sequência e usar enquetes e perguntas para prender a atenção.`);
-  }
-  if (bestSaves && bestSaves.name !== bestReach?.name) {
-    melhorar.push(`<strong>${bestSaves.name}</strong> geram mais salvamentos mas não lideram em alcance — testar aumentar a frequência desse formato para combinar autoridade com distribuição.`);
-  }
-
-  // --- Parar ---
-  if (worstReach && bestReach && bestReach.avgViews > 0 && worstReach.avgViews < bestReach.avgViews * 0.35 && worstReach.name !== bestReach.name) {
-    parar.push(`<strong>${worstReach.name}</strong> têm alcance médio de ${formatNumber(worstReach.avgViews)} vs. ${formatNumber(bestReach.avgViews)} dos ${bestReach.name} — reduzir a frequência e redirecionar o esforço para o formato que mais performa.`);
-  }
-  if (novosSegs <= 0 && (crescimento?.seguidoresTotal ?? 0) > 0) {
-    parar.push(`Crescimento de seguidores <strong>estagnado</strong> no período — rever a estratégia de atração. Testar ganchos mais fortes nos primeiros 3 segundos dos reels.`);
-  }
-  if (shareRate === 0 && reach > 200) {
-    parar.push(`<strong>Zero compartilhamentos</strong> no período — evitar conteúdos genéricos ou sem ponto de vista. Todo post deve ter um posicionamento claro ou informação exclusiva.`);
-  }
-
-  if (continuar.length === 0) continuar.push('Continue monitorando mensalmente para identificar padrões ao longo do tempo.');
-  if (melhorar.length === 0) melhorar.push('Nenhuma queda crítica identificada. Teste novos formatos e compare nos próximos meses.');
-  if (parar.length === 0) parar.push('Nenhum padrão negativo relevante identificado neste período.');
+  // Regras vivem em recomendacoes.js para que o PDF use exatamente as mesmas.
+  const { continuar, melhorar, parar, saveRate, shareRate, taxaEng, bestReach, referencias } = computeRecomendacoes(data);
 
   const saveColor = saveRate >= 2 ? 'var(--positive)' : saveRate >= 1 ? '#f59e0b' : 'var(--negative)';
   const shareColor = shareRate >= 1 ? 'var(--positive)' : shareRate >= 0.5 ? '#f59e0b' : 'var(--negative)';
@@ -509,21 +509,21 @@ function renderAnalysis(data) {
   const healthCards = `<div class="cards-row">
     <div class="metric-card">
       <div class="metric-icon">🔖</div>
-      <span class="metric-value" style="color:${saveColor}">${saveRate}%</span>
+      <span class="metric-value" style="color:${saveColor}">${dec(saveRate)}%</span>
       <span class="metric-label">Save Rate</span>
-      <span class="metric-trend neutral" style="font-size:10px">referência: acima de 2%</span>
+      <span class="metric-trend neutral" style="font-size:10px">referência: acima de ${referencias.saveRate}%</span>
     </div>
     <div class="metric-card">
       <div class="metric-icon">🔁</div>
-      <span class="metric-value" style="color:${shareColor}">${shareRate}%</span>
+      <span class="metric-value" style="color:${shareColor}">${dec(shareRate)}%</span>
       <span class="metric-label">Share Rate</span>
-      <span class="metric-trend neutral" style="font-size:10px">referência: acima de 1%</span>
+      <span class="metric-trend neutral" style="font-size:10px">referência: acima de ${referencias.shareRate}%</span>
     </div>
     <div class="metric-card">
       <div class="metric-icon">⚡</div>
-      <span class="metric-value" style="color:${engColor}">${taxaEng}%</span>
+      <span class="metric-value" style="color:${engColor}">${dec(taxaEng)}%</span>
       <span class="metric-label">Taxa de Engajamento</span>
-      <span class="metric-trend neutral" style="font-size:10px">referência: acima de 3%</span>
+      <span class="metric-trend neutral" style="font-size:10px">referência: acima de ${referencias.engajamento}%</span>
     </div>
     ${bestReach ? `<div class="metric-card">
       <div class="metric-icon">🏆</div>
@@ -603,16 +603,83 @@ function renderHeatmap(postingHeatmap) {
 //  MAIN RENDER
 // ============================================================
 
+// ============================================================
+//  RESUMO EXECUTIVO / ALCANCE POR TIPO / FORMATOS / JORNADA
+// ============================================================
+
+function renderResumoExecutivo(resumo) {
+  if (!resumo?.frases?.length) return '';
+  const itens = resumo.frases.map(f => `<li>${escapeHtml(f)}</li>`).join('');
+  const nota = resumo.temComparativo
+    ? ''
+    : '<p class="resumo-nota">Sem período anterior disponível para comparação.</p>';
+  return sectionWrap('Visão geral', 'Resumo Executivo',
+    `<div class="glass-card resumo-card"><ul class="resumo-lista">${itens}</ul>${nota}</div>`);
+}
+
+function renderAlcancePorTipo(alcancePorTipo) {
+  // Sem o breakdown a seção inteira some: mostrar 0% de não seguidores seria
+  // afirmar que o conteúdo não furou a bolha, e isso o dado não disse.
+  if (!alcancePorTipo) return '';
+  const { seguidores, naoSeguidores, pctSeguidores, pctNaoSeguidores } = alcancePorTipo;
+  return `<div class="glass-card alcance-tipo-card">
+    <div class="alcance-tipo-barra">
+      <div class="alcance-tipo-seg" style="width:${pctSeguidores}%"></div>
+      <div class="alcance-tipo-nao" style="width:${pctNaoSeguidores}%"></div>
+    </div>
+    <div class="alcance-tipo-legenda">
+      <span><i class="dot-seg"></i> Seguidores — <strong>${formatNumber(seguidores)}</strong> (${pctSeguidores.toLocaleString('pt-BR')}%)</span>
+      <span><i class="dot-nao"></i> Não seguidores — <strong>${formatNumber(naoSeguidores)}</strong> (${pctNaoSeguidores.toLocaleString('pt-BR')}%)</span>
+    </div>
+  </div>`;
+}
+
+function renderFormatosTabela(formatosTabela) {
+  if (!formatosTabela?.length) return '';
+  const linhas = formatosTabela.map(f => `<tr>
+    <td><strong>${escapeHtml(f.nome)}</strong></td>
+    <td>${f.posts}</td>
+    <td>${formatNumber(f.alcanceMedio)}</td>
+    <td>${f.engajamentoPct.toLocaleString('pt-BR')}%</td>
+    <td>${formatNumber(f.salvamentosMedio)}</td>
+    <td>${formatNumber(f.compartilhamentosMedio)}</td>
+  </tr>`).join('');
+
+  return sectionWrap('Performance por formato', 'Resultados por Tipo',
+    `<div class="glass-card tabela-wrap"><table class="data-table formatos-tabela">
+      <thead><tr>
+        <th>Formato</th><th>Posts</th><th>Alcance médio</th>
+        <th>Engajamento</th><th>Salvamentos</th><th>Compartilhamentos</th>
+      </tr></thead>
+      <tbody>${linhas}</tbody>
+    </table></div>`);
+}
+
+function renderJornada(jornada) {
+  if (!jornada?.length) return '';
+  const etapas = jornada.map((e, i) => `
+    <div class="jornada-etapa">
+      <div class="jornada-valor">${formatNumber(e.valor)}</div>
+      <div class="jornada-label">${escapeHtml(e.etapa)}</div>
+    </div>
+    ${i < jornada.length - 1 ? '<div class="jornada-seta">↓</div>' : ''}`).join('');
+
+  return sectionWrap('Do alcance à ação', 'Jornada do Público',
+    `<div class="glass-card jornada-card">${etapas}
+      <p class="jornada-nota">Etapas medidas separadamente pela API do Instagram. Uma visita ao perfil pode ter vindo da busca ou de um post antigo, não necessariamente do alcance deste período — por isso não há taxa de conversão entre as etapas.</p>
+    </div>`);
+}
+
 export function renderDashboard(data, deltas = null) {
   const dashboard = document.getElementById('dashboard');
   if (!dashboard) return;
 
   const d = deltas || {};
 
-  const { crescimento, alcance, engajamento, conteudo,
+  const { crescimento, alcance, engajamento, conteudo, acoesPerfil,
     reelsPerformance, storiesPerformance, audiencia,
-    topPosts, weeklyData, contentPerformance, periodo,
-    postingHeatmap } = data;
+    topPosts, engagementTrend, engagementTrendMeta, contentPerformance, periodo,
+    postingHeatmap, comparativo, jornada, formatosTabela, resumoExecutivo } = data;
 
   const unfollowsCard = crescimento?.unfollows === null
     ? `<div class="metric-card">
@@ -632,26 +699,50 @@ export function renderDashboard(data, deltas = null) {
     periodoLabel += ` — vs. coleta de ${day}/${m}`;
   }
 
-  // 1. Crescimento + Alcance + Engajamento
-  const s1 = sectionWrap(periodoLabel, 'Crescimento & Alcance', `
+  const cmp = comparativo ?? {};
+
+  // Saldo líquido só existe quando a API devolve unfollows; caso contrário some.
+  const novos = crescimento?.novosSeguidores ?? 0;
+  const saiu = crescimento?.unfollows;
+  const saldoCard = saiu == null ? '' : metricCard({
+    icon: '⚖️', value: novos - saiu, label: 'Saldo Líquido',
+    cssClass: (novos - saiu) >= 0 ? 'positive' : 'negative',
+  });
+
+  // 1. Crescimento
+  const s1 = sectionWrap(periodoLabel, 'Crescimento', `
     <div class="cards-row">
       ${metricCard({ icon: '👥', value: crescimento?.seguidoresTotal ?? 0, label: 'Seguidores Total', trend: d.seguidores })}
-      ${metricCard({ icon: '📈', value: crescimento?.novosSeguidores ?? 0, label: 'Novos Seguidores', cssClass: 'positive', trend: d.novosSeguidores })}
+      ${metricCard({ icon: '📈', value: novos, label: 'Novos Seguidores', cssClass: 'positive', cmp: cmp.novosSeguidores })}
       ${unfollowsCard}
-      ${metricCard({ icon: '👁', value: alcance?.contasAlcancadas ?? 0, label: 'Contas Alcançadas', trend: d.alcance })}
-      ${metricCard({ icon: '✨', value: alcance?.impressoes ?? 0, label: 'Impressões', trend: d.impressoes })}
+      ${saldoCard}
     </div>`);
+
+  // 2. Alcance
+  const s2Alcance = sectionWrap('Quem foi atingido', 'Alcance', `
+    <div class="cards-row">
+      ${metricCard({ icon: '👁', value: alcance?.contasAlcancadas ?? 0, label: 'Contas Alcançadas', cmp: cmp.alcance })}
+      ${metricCard({ icon: '✨', value: alcance?.impressoes ?? 0, label: 'Impressões', cmp: cmp.impressoes })}
+      ${metricCard({ icon: '🚪', value: acoesPerfil?.visitasPerfil ?? 0, label: 'Visitas ao Perfil', cmp: cmp.visitasPerfil })}
+    </div>
+    ${renderAlcancePorTipo(alcance?.alcancePorTipo)}`);
 
   // 2. Engajamento
   const s2 = sectionWrap('Interações', 'Engajamento', `
     <div class="cards-row">
-      ${metricCard({ icon: '❤️', value: engajamento?.curtidas ?? 0, label: 'Curtidas', trend: d.curtidas })}
-      ${metricCard({ icon: '💬', value: engajamento?.comentarios ?? 0, label: 'Comentários', trend: d.comentarios })}
+      ${metricCard({ icon: '❤️', value: engajamento?.curtidas ?? 0, label: 'Curtidas', cmp: cmp.curtidas })}
+      ${metricCard({ icon: '💬', value: engajamento?.comentarios ?? 0, label: 'Comentários', cmp: cmp.comentarios })}
       ${metricCard({ icon: '🔖', value: engajamento?.salvamentos ?? 0, label: 'Salvamentos', trend: d.salvamentos })}
       ${metricCard({ icon: '🔁', value: engajamento?.compartilhamentos ?? 0, label: 'Compartilhamentos', trend: d.compartilhamentos })}
-      ${metricCard({ icon: '⚡', value: engajamento?.interacoesTotal ?? 0, label: 'Interações Total', trend: d.interacoesTotal })}
-      ${metricCard({ icon: '📊', value: engajamento?.taxaEngajamento ?? 0, label: 'Taxa de Engajamento', suffix: '%', isFloat: true, cssClass: 'accent', trend: d.taxaEngajamento })}
+      ${metricCard({ icon: '⚡', value: engajamento?.interacoesTotal ?? 0, label: 'Interações Total', cmp: cmp.interacoesTotal })}
+      ${metricCard({ icon: '📊', value: engajamento?.taxaEngajamento ?? 0, label: 'Taxa de Engajamento', suffix: '%', isFloat: true, cssClass: 'accent', cmp: cmp.taxaEngajamento })}
     </div>`);
+
+  const trendDias = engagementTrendMeta?.dias ?? periodo?.dias ?? 30;
+  const trendVariacao = engagementTrendMeta?.variacaoPct;
+  const trendEyebrow = typeof trendVariacao === 'number'
+    ? ` · ${trendVariacao >= 0 ? '+' : ''}${trendVariacao}%`
+    : '';
 
   // 3. Charts
   const chartsSection = `<div class="section">
@@ -663,9 +754,9 @@ export function renderDashboard(data, deltas = null) {
     </div>
     <div class="charts-grid">
       <div class="chart-card">
-        <div class="chart-eyebrow">últimas 4 semanas</div>
-        <div class="chart-title">Engajamento Semanal</div>
-        <div class="chart-container"><canvas id="chartWeekly"></canvas></div>
+        <div class="chart-eyebrow">últimos ${trendDias} dias${trendEyebrow}</div>
+        <div class="chart-title">Crescimento do Engajamento Médio</div>
+        <div class="chart-container"><canvas id="chartEngagementTrend"></canvas></div>
       </div>
       <div class="chart-card">
         <div class="chart-eyebrow">distribuição</div>
@@ -675,21 +766,26 @@ export function renderDashboard(data, deltas = null) {
     </div>
   </div>`;
 
-  // 4. Content Performance
-  const cp = contentPerformance ?? {};
-  const s4 = sectionWrap('Performance por formato', 'Resultados por Tipo', `
-    <div class="cards-row">
-      ${metricCard({ icon: '🎬', value: cp.reels?.count ?? 0, label: 'Reels publicados' })}
-      ${metricCard({ value: cp.reels?.avgViews ?? 0, label: 'Média views/Reel' })}
-      ${metricCard({ value: cp.reels?.avgLikes ?? 0, label: 'Média curtidas/Reel' })}
-      ${metricCard({ value: cp.reels?.avgSaves ?? 0, label: 'Média saves/Reel' })}
-    </div>
-    <div class="cards-row" style="margin-top:12px">
-      ${metricCard({ icon: '🖼', value: cp.carrosseis?.count ?? 0, label: 'Carrosséis publicados' })}
-      ${metricCard({ value: cp.carrosseis?.avgLikes ?? 0, label: 'Média curtidas/Carrossel' })}
-      ${metricCard({ value: cp.carrosseis?.avgSaves ?? 0, label: 'Média saves/Carrossel' })}
-      ${metricCard({ icon: '📷', value: cp.posts?.count ?? 0, label: 'Posts estáticos' })}
-    </div>`);
+  // 6. Formatos (tabela comparável)
+  const s6Formatos = renderFormatosTabela(formatosTabela);
+
+  // 9. Stories
+  const st = storiesPerformance ?? {};
+  const s9Stories = (conteudo?.stories ?? 0) > 0
+    ? sectionWrap('Conteúdo efêmero', 'Stories', `
+      <div class="cards-row">
+        ${metricCard({ icon: '⏱', value: conteudo?.stories ?? 0, label: 'Stories publicados' })}
+        ${metricCard({ icon: '👁', value: st.alcanceMedio ?? 0, label: 'Alcance médio' })}
+        ${metricCard({ icon: '📉', value: st.retencaoPct ?? 0, label: 'Retenção', suffix: '%' })}
+        ${metricCard({ icon: '💬', value: st.respostas ?? 0, label: 'Respostas' })}
+      </div>`)
+    : '';
+
+  // 10. Jornada do público
+  const s10Jornada = renderJornada(jornada);
+
+  // 0. Resumo executivo
+  const s0 = renderResumoExecutivo(resumoExecutivo);
 
   // 6. Posting Heatmap
   const s6 = renderHeatmap(postingHeatmap);
@@ -749,11 +845,15 @@ export function renderDashboard(data, deltas = null) {
     </div>
   </div>`;
 
-  dashboard.innerHTML = s1 + s2 + chartsSection + s4 + s6 + s7 + s8 + s9 + aiSection + evolutionSection;
+  // Ordem do relatório padrão INSID:
+  // resumo → crescimento → alcance → engajamento → audiência → formatos →
+  // melhor horário → top posts → stories → jornada → análise & recomendações
+  dashboard.innerHTML = s0 + s1 + s2Alcance + s2 + chartsSection + s8 + s6Formatos
+    + s6 + s7 + s9Stories + s10Jornada + s9 + aiSection + evolutionSection;
 
   // Init charts and counters after DOM is ready
   requestAnimationFrame(() => {
-    initCharts(weeklyData, conteudo);
+    initCharts(engagementTrend, conteudo, engagementTrendMeta);
     animateAllCounters();
   });
 }
@@ -776,19 +876,40 @@ export function initEvolutionCharts(snapshots) {
   const section = document.getElementById('evolutionSection');
   if (section) section.style.display = '';
 
-  const sorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
+  destroyCharts(CHARTS_EVOLUCAO);
+
+  // Uma coleta por dia: se houver mais de uma no mesmo dia, vale a mais recente.
+  // Sem isso o gráfico empilha vários pontos sobre a mesma data e parece travado.
+  const porDia = new Map();
+  snapshots.forEach(s => {
+    const anterior = porDia.get(s.date);
+    if (!anterior || (s.updatedAt ?? s.createdAt ?? '') >= (anterior.updatedAt ?? anterior.createdAt ?? '')) {
+      porDia.set(s.date, s);
+    }
+  });
+
+  const sorted = [...porDia.values()].sort((a, b) => a.date.localeCompare(b.date));
+
+  if (sorted.length < 2) {
+    const hintUnico = document.getElementById('evolutionHint');
+    if (hintUnico) {
+      hintUnico.textContent = 'Só há uma coleta registrada neste período. Os gráficos de evolução comparam coletas de dias diferentes — volte amanhã para ver a linha crescer.';
+    }
+    return;
+  }
+
   const labels = sorted.map(s => {
     const [y, m, d] = s.date.split('-');
     return d + '/' + m;
   });
 
-  const gridColor = 'rgba(255, 247, 236, 0.05)';
-  const tickColor = 'rgba(255, 247, 236, 0.45)';
+  const gridColor = token('--chart-grid');
+  const tickColor = token('--chart-tick');
   const tooltipDefaults = {
-    backgroundColor: 'rgba(13, 8, 7, 0.92)',
-    titleColor: '#FFF7EC',
-    bodyColor: 'rgba(255, 247, 236, 0.72)',
-    borderColor: 'rgba(196, 144, 142, 0.3)',
+    backgroundColor: token('--tooltip-bg'),
+    titleColor: token('--tooltip-text'),
+    bodyColor: token('--tooltip-body'),
+    borderColor: token('--border-strong'),
     borderWidth: 1,
     padding: 10,
     cornerRadius: 10,
@@ -819,8 +940,8 @@ export function initEvolutionCharts(snapshots) {
         datasets: [{
           label: 'Seguidores',
           data: sorted.map(s => s.kpis.seguidores),
-          borderColor: '#C8A96E',
-          backgroundColor: 'rgba(196, 144, 142, 0.15)',
+          borderColor: token('--chart-1'),
+          backgroundColor: token('--chart-area'),
           fill: true,
         }],
       },
@@ -839,15 +960,15 @@ export function initEvolutionCharts(snapshots) {
           {
             label: 'Alcance',
             data: sorted.map(s => s.kpis.alcance),
-            borderColor: '#C8A96E',
-            backgroundColor: 'rgba(196, 144, 142, 0.1)',
+            borderColor: token('--chart-1'),
+            backgroundColor: token('--chart-area'),
             fill: false,
           },
           {
             label: 'Impress\u00f5es',
             data: sorted.map(s => s.kpis.impressoes),
-            borderColor: '#E8D5AE',
-            backgroundColor: 'rgba(245, 203, 215, 0.1)',
+            borderColor: token('--chart-3'),
+            backgroundColor: 'rgba(142, 142, 150, 0.12)',
             fill: false,
           },
         ],
@@ -866,8 +987,8 @@ export function initEvolutionCharts(snapshots) {
         datasets: [{
           label: 'Taxa de Engajamento (%)',
           data: sorted.map(s => s.kpis.taxaEngajamento),
-          borderColor: '#C8A96E',
-          backgroundColor: 'rgba(116, 30, 49, 0.15)',
+          borderColor: token('--chart-1'),
+          backgroundColor: token('--chart-area'),
           fill: true,
         }],
       },
@@ -886,19 +1007,19 @@ export function initEvolutionCharts(snapshots) {
           {
             label: 'Curtidas',
             data: sorted.map(s => s.kpis.curtidas),
-            borderColor: 'rgba(196, 144, 142, 0.85)',
+            borderColor: token('--chart-1'),
             fill: false,
           },
           {
             label: 'Salvamentos',
             data: sorted.map(s => s.kpis.salvamentos),
-            borderColor: 'rgba(245, 203, 215, 0.85)',
+            borderColor: token('--chart-2'),
             fill: false,
           },
           {
             label: 'Compartilhamentos',
             data: sorted.map(s => s.kpis.compartilhamentos),
-            borderColor: 'rgba(116, 30, 49, 0.85)',
+            borderColor: token('--chart-3'),
             fill: false,
           },
         ],
@@ -909,6 +1030,8 @@ export function initEvolutionCharts(snapshots) {
 
   const hint = document.getElementById('evolutionHint');
   if (hint) {
-    hint.textContent = sorted.length + ' coleta' + (sorted.length > 1 ? 's' : '') + ' registrada' + (sorted.length > 1 ? 's' : '') + ' \u2014 de ' + labels[0] + ' a ' + labels[labels.length - 1];
+    const dias = snapshots[0]?.days;
+    const periodoTxt = dias ? ' (período de ' + dias + 'd)' : '';
+    hint.textContent = sorted.length + ' coletas em dias distintos' + periodoTxt + ' \u2014 de ' + labels[0] + ' a ' + labels[labels.length - 1];
   }
 }

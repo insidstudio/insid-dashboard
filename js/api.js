@@ -50,7 +50,7 @@ export async function fetchAccountInfo() {
 export async function fetchAccountInsights(since, until) {
   const userId = getUserId();
   return graphGet(`/${userId}/insights`, {
-    metric: 'reach,views,total_interactions,accounts_engaged,follows_and_unfollows,profile_links_taps',
+    metric: 'reach,views,total_interactions,accounts_engaged,follows_and_unfollows,profile_links_taps,profile_views',
     period: 'day',
     metric_type: 'total_value',
     since,
@@ -76,6 +76,24 @@ export async function fetchNetFollows(since, until) {
     metric: 'follows_and_unfollows',
     period: 'day',
     metric_type: 'total_value',
+    since,
+    until,
+  });
+}
+
+/**
+ * Alcance separado entre seguidores e nao seguidores.
+ *
+ * E a metrica que responde se o conteudo furou a bolha ou so circulou na base.
+ * Nem toda conta/token devolve esse breakdown, entao quem chama trata a falha.
+ */
+export async function fetchReachByFollowType(since, until) {
+  const userId = getUserId();
+  return graphGet(`/${userId}/insights`, {
+    metric: 'reach',
+    period: 'day',
+    metric_type: 'total_value',
+    breakdown: 'follow_type',
     since,
     until,
   });

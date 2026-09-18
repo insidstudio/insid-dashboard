@@ -169,7 +169,7 @@ async function loadDashboard(forceRefresh = false, days = currentDays) {
       await saveSnapshot(accountId, data).catch(() => {});
       pruneOldSnapshots(accountId).catch(() => {});
 
-      const prev = await getPreviousSnapshot(accountId).catch(() => null);
+      const prev = await getPreviousSnapshot(accountId, days).catch(() => null);
       if (prev?.kpis) {
         const currentKpis = {
           seguidores: data.crescimento?.seguidoresTotal ?? 0,
@@ -193,7 +193,7 @@ async function loadDashboard(forceRefresh = false, days = currentDays) {
 
     // Load evolution charts from IndexedDB
     if (accountId) {
-      getSnapshotsByAccount(accountId).then(snaps => {
+      getSnapshotsByAccount(accountId, days).then(snaps => {
         initEvolutionCharts(snaps);
       }).catch(() => {});
     }

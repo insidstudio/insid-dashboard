@@ -51,6 +51,61 @@ function avgStat(arr, fn) {
   return arr.length > 0 ? Math.round(arr.reduce((acc, m) => acc + fn(m), 0) / arr.length) : 0;
 }
 
+/**
+ * KPIs comparaveis de um periodo arbitrario.
+ *
+ * Usado para o periodo ANTERIOR, que alimenta o comparativo "+143 | +2,0%".
+ * So busca o que da para obter barato: insights de conta (1 chamada) mais
+ * curtidas/comentarios das midias que ja temos em maos. Salvamentos e
+ * compartilhamentos exigiriam uma chamada por post do periodo anterior, o que
+ * dobraria o custo do relatorio inteiro - ficam de fora de proposito.
+ */
+async function fetchPeriodKPIs(since, until, allMedia) {
+  const [insightsResult, followsResult] = await Promise.allSettled([
+    api.fetchAccountInsights(since, until),
+    api.fetchNetFollows(since, until),
+  ]);
+
+  const insights = insightsResult.status === 'fulfilled' ? (insightsResult.value?.data ?? []) : [];
+  const followsRaw = followsResult.status === 'fulfilled' ? followsResult.value : null;
+
+  const sinceMs = since * 1000;
+  const untilMs = until * 1000;
+  const midias = (allMedia ?? []).filter(m => {
+    const ts = new Date(m.timestamp).getTime();
+    return ts >= sinceMs && ts < untilMs;
+  });
+
+  const alcance = getInsightValue(insights, 'reach');
+  const interacoes = getInsightValue(insights, 'total_interactions');
+
+  return {
+    alcance,
+    impressoes: getInsightValue(insights, 'views'),
+    visitasPerfil: getInsightValue(insights, 'profile_views'),
+    toquesLinkBio: getInsightValue(insights, 'profile_links_taps'),
+    novosSeguidores: getInsightValue(followsRaw?.data ?? [], 'follows_and_unfollows'),
+    interacoesTotal: interacoes,
+    curtidas: midias.reduce((acc, m) => acc + (m.like_count ?? 0), 0),
+    comentarios: midias.reduce((acc, m) => acc + (m.comments_count ?? 0), 0),
+    posts: midias.length,
+    taxaEngajamento: alcance > 0 ? Math.round((interacoes / alcance) * 1000) / 10 : 0,
+  };
+}
+
+/**
+ * Variacao percentual entre dois valores, para os selos "+2,0%".
+ *
+ * Devolve null (e nao 0 ou 100) quando nao da para comparar: sem base anterior
+ * qualquer porcentagem seria inventada, e a UI precisa saber a diferenca para
+ * mostrar "-" em vez de um numero falso.
+ */
+function variacao(atual, anterior) {
+  if (anterior == null || anterior === 0) return null;
+  if (atual == null) return null;
+  return Math.round(((atual - anterior) / Math.abs(anterior)) * 1000) / 10;
+}
+
 export async function fetchAllMetrics(days = 30, customSince = null, customUntil = null) {
   const { since, until } = getDateRange(days, customSince, customUntil);
   const sinceDate = new Date(since * 1000);
@@ -66,6 +121,7 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
     storiesResult,
     followsBreakdownResult,
     netFollowsResult,
+    reachByFollowTypeResult,
   ] = await Promise.allSettled([
     api.fetchAccountInfo(),
     api.fetchAccountInsights(since, until),
@@ -76,6 +132,7 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
     api.fetchStories(),
     api.fetchFollowsBreakdown(since, until),
     api.fetchNetFollows(since, until),
+    api.fetchReachByFollowType(since, until),
   ]);
 
   const accountInfo = accountInfoResult.status === 'fulfilled' ? accountInfoResult.value : null;
@@ -87,6 +144,7 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
   const storiesRaw = storiesResult.status === 'fulfilled' ? storiesResult.value : null;
   const followsRaw = followsBreakdownResult.status === 'fulfilled' ? followsBreakdownResult.value : null;
   const netFollowsRaw = netFollowsResult.status === 'fulfilled' ? netFollowsResult.value : null;
+  const reachByFollowTypeRaw = reachByFollowTypeResult.status === 'fulfilled' ? reachByFollowTypeResult.value : null;
 
   const insights = accountInsightsRaw?.data ?? [];
   const allMedia = mediaRaw?.data ?? [];
@@ -143,6 +201,22 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
   const contasAlcancadas = getInsightValue(insights, 'reach');
   const impressoes = getInsightValue(insights, 'views');
 
+  // --- Alcance: seguidores x nao seguidores ---
+  // Nem toda conta devolve esse breakdown; sem ele os campos ficam null e a UI
+  // omite a secao em vez de mostrar zero, que seria lido como "nao furou a bolha".
+  const reachBreakdown = reachByFollowTypeRaw?.data?.[0]?.total_value?.breakdowns?.[0]?.results ?? [];
+  const reachSeguidores = reachBreakdown.find(r => r.dimension_values?.includes('FOLLOWER'))?.value ?? null;
+  const reachNaoSeguidores = reachBreakdown.find(r => r.dimension_values?.includes('NON_FOLLOWER'))?.value ?? null;
+  const reachTipoTotal = (reachSeguidores ?? 0) + (reachNaoSeguidores ?? 0);
+  const alcancePorTipo = reachTipoTotal > 0
+    ? {
+        seguidores: reachSeguidores ?? 0,
+        naoSeguidores: reachNaoSeguidores ?? 0,
+        pctSeguidores: Math.round(((reachSeguidores ?? 0) / reachTipoTotal) * 1000) / 10,
+        pctNaoSeguidores: Math.round(((reachNaoSeguidores ?? 0) / reachTipoTotal) * 1000) / 10,
+      }
+    : null;
+
   // --- Engajamento ---
   const curtidas = periodMedia.reduce((acc, m) => acc + (m.like_count ?? 0), 0);
   const comentarios = periodMedia.reduce((acc, m) => acc + (m.comments_count ?? 0), 0);
@@ -154,6 +228,7 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
 
   // --- Ações no Perfil ---
   const toquesLinkBio = getInsightValue(insights, 'profile_links_taps');
+  const visitasPerfil = getInsightValue(insights, 'profile_views');
 
   // --- Conteúdo Publicado ---
   const storiesCount = allStories.length;
@@ -228,27 +303,64 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
     .sort((a, b) => b.totalInteractions - a.totalInteractions)
     .slice(0, 6);
 
-  // --- Weekly Engagement (últimas 4 semanas) ---
-  const weeklyData = [];
-  for (let i = 3; i >= 0; i--) {
-    const weekEnd = new Date();
-    weekEnd.setDate(weekEnd.getDate() - i * 7);
-    const weekStart = new Date(weekEnd);
-    weekStart.setDate(weekStart.getDate() - 7);
+  // --- Engajamento médio diário (janela = período selecionado, com média móvel) ---
+  const DAY_MS = 24 * 60 * 60 * 1000;
 
-    const weekMedia = allMedia.filter(m => {
-      const ts = new Date(m.timestamp).getTime();
-      return ts >= weekStart.getTime() && ts < weekEnd.getTime();
+  const trendEnd = new Date(untilDate);
+  trendEnd.setHours(0, 0, 0, 0);
+  const trendStart = new Date(sinceDate);
+  trendStart.setHours(0, 0, 0, 0);
+
+  // Acompanha o filtro do topo (7d / 14d / 30d / 90d / intervalo custom).
+  const TREND_DAYS = Math.max(1, Math.round((trendEnd.getTime() - trendStart.getTime()) / DAY_MS));
+  // Suavização proporcional: períodos curtos ficariam achatados com janela de 7 dias.
+  const TREND_WINDOW = TREND_DAYS <= 14 ? 3 : (TREND_DAYS <= 30 ? 7 : 14);
+
+  const dayKey = dt => `${dt.getFullYear()}-${dt.getMonth() + 1}-${dt.getDate()}`;
+
+  const engByDay = {};
+  enrichedMedia.forEach(m => {
+    const key = dayKey(new Date(m.timestamp));
+    if (!engByDay[key]) engByDay[key] = { total: 0, count: 0 };
+    engByDay[key].total += m.totalInteractions ?? 0;
+    engByDay[key].count += 1;
+  });
+
+  const engagementTrend = [];
+  for (let i = TREND_DAYS - 1; i >= 0; i--) {
+    const day = new Date(trendEnd.getTime() - i * DAY_MS);
+
+    // Média móvel: engajamento por post no dia e nos anteriores da janela.
+    let windowEng = 0;
+    let windowPosts = 0;
+    for (let w = 0; w < TREND_WINDOW; w++) {
+      const bucket = engByDay[dayKey(new Date(day.getTime() - w * DAY_MS))];
+      if (bucket) {
+        windowEng += bucket.total;
+        windowPosts += bucket.count;
+      }
+    }
+
+    engagementTrend.push({
+      label: `${day.getDate()}/${day.getMonth() + 1}`,
+      mediaEngajamento: windowPosts > 0 ? Math.round(windowEng / windowPosts) : 0,
+      postsNaJanela: windowPosts,
+      postsNoDia: engByDay[dayKey(day)]?.count ?? 0,
     });
-
-    const weekCurtidas = weekMedia.reduce((acc, m) => acc + (m.like_count ?? 0), 0);
-    const weekSaves = weekMedia.reduce((acc, m) => acc + getMediaInsightValue(mediaInsightsMap[m.id] ?? [], 'saved'), 0);
-    const weekShares = weekMedia.reduce((acc, m) => acc + getMediaInsightValue(mediaInsightsMap[m.id] ?? [], 'shares'), 0);
-
-    const d = new Date(weekEnd);
-    const label = `${d.getDate()}/${d.getMonth() + 1}`;
-    weeklyData.push({ label, curtidas: weekCurtidas, saves: weekSaves, shares: weekShares, posts: weekMedia.length });
   }
+
+  // Crescimento entre o primeiro e o último ponto com dados.
+  const trendComDados = engagementTrend.filter(p => p.postsNaJanela > 0);
+  const trendInicio = trendComDados[0]?.mediaEngajamento ?? 0;
+  const trendFim = trendComDados[trendComDados.length - 1]?.mediaEngajamento ?? 0;
+
+  const engagementTrendMeta = {
+    dias: TREND_DAYS,
+    janela: TREND_WINDOW,
+    variacaoPct: trendInicio > 0
+      ? Math.round(((trendFim - trendInicio) / trendInicio) * 1000) / 10
+      : null,
+  };
 
   // --- Content Performance por tipo ---
   const getIns = m => mediaInsightsMap[m.id] ?? [];
@@ -291,6 +403,114 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
     postingHeatmap.push({ day, hour, avgEng: Math.round(val.totalEng / val.count), count: val.count });
   }
 
+  // --- Comparativo com o periodo ANTERIOR ---
+  // Periodo imediatamente anterior, de mesma duracao. Buscado na API (e nao do
+  // historico de coletas) para que cliente novo tenha comparativo ja na primeira
+  // abertura, sem depender de alguem ter aberto o dashboard antes.
+  const duracaoSegundos = until - since;
+  let periodoAnterior = null;
+  try {
+    periodoAnterior = await fetchPeriodKPIs(since - duracaoSegundos, since, allMedia);
+  } catch {
+    periodoAnterior = null;
+  }
+
+  const atualParaComparar = {
+    alcance: contasAlcancadas,
+    impressoes,
+    visitasPerfil,
+    toquesLinkBio,
+    novosSeguidores,
+    interacoesTotal,
+    curtidas,
+    comentarios,
+    taxaEngajamento,
+  };
+
+  const comparativo = {};
+  if (periodoAnterior) {
+    for (const chave of Object.keys(atualParaComparar)) {
+      comparativo[chave] = {
+        anterior: periodoAnterior[chave] ?? null,
+        absoluto: periodoAnterior[chave] != null ? atualParaComparar[chave] - periodoAnterior[chave] : null,
+        pct: variacao(atualParaComparar[chave], periodoAnterior[chave]),
+      };
+    }
+  }
+
+  // --- Jornada do publico ---
+  // Deliberadamente SEM percentual entre etapas: a API nao liga uma visita ao
+  // perfil ao alcance que a originou (a pessoa pode ter vindo da busca ou de um
+  // post antigo), entao uma "taxa de conversao" aqui seria causalidade inventada.
+  const jornada = [
+    { etapa: 'Pessoas alcançadas', valor: contasAlcancadas },
+    { etapa: 'Visitas ao perfil', valor: visitasPerfil },
+    { etapa: 'Novos seguidores', valor: novosSeguidores ?? 0 },
+    { etapa: 'Cliques no link', valor: toquesLinkBio },
+  ];
+
+  // --- Tabela comparavel por formato ---
+  // Usa 'reach' para todos os formatos (o contentPerformance usa 'views' nos
+  // Reels), senao as linhas da tabela nao seriam comparaveis entre si.
+  const linhaFormato = (nome, lista) => {
+    if (lista.length === 0) return null;
+    const alcanceMed = avgStat(lista, m => getMediaInsightValue(getIns(m), 'reach'));
+    const interMed = avgStat(lista, m => getMediaInsightValue(getIns(m), 'total_interactions'));
+    return {
+      nome,
+      posts: lista.length,
+      alcanceMedio: alcanceMed,
+      engajamentoPct: alcanceMed > 0 ? Math.round((interMed / alcanceMed) * 1000) / 10 : 0,
+      salvamentosMedio: avgStat(lista, m => getMediaInsightValue(getIns(m), 'saved')),
+      compartilhamentosMedio: avgStat(lista, m => getMediaInsightValue(getIns(m), 'shares')),
+    };
+  };
+
+  const formatosTabela = [
+    linhaFormato('Reels', reels),
+    linhaFormato('Carrossel', carousels),
+    linhaFormato('Estático', images),
+  ].filter(Boolean);
+
+  // --- Resumo executivo ---
+  // Montado a partir dos numeros ja calculados. Nao ha interpretacao aqui:
+  // cada frase so existe se o dado que a sustenta existir.
+  const melhorFormatoAlcance = formatosTabela.length > 0
+    ? formatosTabela.reduce((b, f) => f.alcanceMedio > b.alcanceMedio ? f : b, formatosTabela[0])
+    : null;
+
+  const frases = [];
+  const sinal = v => v >= 0 ? '+' : '';
+  // Decimais em pt-BR: 45.2 vira 45,2 no texto que o cliente le.
+  const pct = v => `${sinal(v)}${v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+
+  if (comparativo.alcance?.pct != null) {
+    frases.push(`O alcance variou ${pct(comparativo.alcance.pct)} em relação ao período anterior, chegando a ${contasAlcancadas.toLocaleString('pt-BR')} contas.`);
+  } else {
+    frases.push(`O perfil alcançou ${contasAlcancadas.toLocaleString('pt-BR')} contas no período.`);
+  }
+
+  if (novosSeguidores != null && comparativo.novosSeguidores?.pct != null) {
+    frases.push(`Entraram ${novosSeguidores.toLocaleString('pt-BR')} novos seguidores (${pct(comparativo.novosSeguidores.pct)} vs. período anterior).`);
+  } else if (novosSeguidores != null) {
+    frases.push(`Entraram ${novosSeguidores.toLocaleString('pt-BR')} novos seguidores no período.`);
+  }
+
+  if (melhorFormatoAlcance) {
+    frases.push(`${melhorFormatoAlcance.nome} foi o formato de maior alcance médio, com ${melhorFormatoAlcance.alcanceMedio.toLocaleString('pt-BR')} contas por publicação.`);
+  }
+
+  if (alcancePorTipo) {
+    frases.push(`${alcancePorTipo.pctNaoSeguidores.toLocaleString('pt-BR')}% do alcance veio de quem ainda não segue o perfil.`);
+  }
+
+  frases.push(`A taxa de engajamento do período foi de ${taxaEngajamento.toLocaleString('pt-BR')}%.`);
+
+  const resumoExecutivo = {
+    frases,
+    temComparativo: Boolean(periodoAnterior),
+  };
+
   return {
     account: {
       username: accountInfo?.username ?? null,
@@ -303,15 +523,21 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
       dias: days,
     },
     crescimento: { seguidoresTotal, novosSeguidores, unfollows },
-    alcance: { contasAlcancadas, impressoes },
+    alcance: { contasAlcancadas, impressoes, alcancePorTipo },
     engajamento: { curtidas, comentarios, salvamentos, compartilhamentos, interacoesTotal, taxaEngajamento },
-    acoesPerfil: { toquesLinkBio },
+    acoesPerfil: { toquesLinkBio, visitasPerfil },
     conteudo: { reels: reels.length, carrosseis: carousels.length, postsEstaticos: images.length, stories: storiesCount },
     reelsPerformance: { mediaViews, mediaCurtidas, mediaSaves, mediaShares },
     storiesPerformance: { alcanceMedio, retencaoPct, respostas },
     audiencia: { pctMulheres, pctHomens, faixaEtaria, cidades },
     topPosts,
-    weeklyData,
+    engagementTrend,
+    engagementTrendMeta,
+    comparativo,
+    periodoAnterior,
+    jornada,
+    formatosTabela,
+    resumoExecutivo,
     contentPerformance,
     postingHeatmap,
   };

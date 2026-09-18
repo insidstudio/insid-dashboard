@@ -20,6 +20,20 @@ function openDB() {
   });
 }
 
+/**
+ * Data local no formato YYYY-MM-DD.
+ *
+ * `toISOString()` devolve a data em UTC: no Brasil (UTC-3), qualquer coleta
+ * feita depois das 21h era gravada com a data do dia seguinte, criando dois
+ * snapshots para o mesmo dia de uso.
+ */
+function hojeLocal() {
+  const d = new Date();
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
 function extractKPIs(data) {
   return {
     seguidores: data.crescimento?.seguidoresTotal ?? 0,
@@ -42,7 +56,7 @@ function extractKPIs(data) {
 
 export async function saveSnapshot(accountId, data) {
   const db = await openDB();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hojeLocal();
   const days = data.periodo?.dias ?? 30;
 
   // Avoid duplicate snapshots for the same account+date+days
@@ -140,7 +154,15 @@ async function _cloudSaveSnapshot(snapshot) {
   } catch {}
 }
 
-export async function getSnapshotsByAccount(accountId) {
+/**
+ * Snapshots de uma conta. `days` filtra pelo período da coleta (7/14/30/90).
+ *
+ * Sem esse filtro a série mistura coletas de períodos diferentes: trocar de
+ * 7d para 90d no mesmo dia gera três pontos com a MESMA data e magnitudes
+ * incomparáveis — que é o que fazia os gráficos de evolução parecerem travados
+ * num único dia.
+ */
+export async function getSnapshotsByAccount(accountId, days = null) {
   if (isCloudEnabled()) {
     try {
       const { data } = await getSupabase().from('snapshots')
@@ -148,7 +170,8 @@ export async function getSnapshotsByAccount(accountId) {
         .eq('account_id', accountId)
         .order('date', { ascending: true });
       if (data && data.length > 0) {
-        return data.map(row => ({
+        const rows = days == null ? data : data.filter(r => r.days === days);
+        return rows.map(row => ({
           id: row.id,
           accountId: row.account_id,
           date: row.date,
@@ -165,7 +188,10 @@ export async function getSnapshotsByAccount(accountId) {
     const tx = db.transaction(STORE_NAME, 'readonly');
     const index = tx.objectStore(STORE_NAME).index('accountId');
     const req = index.getAll(accountId);
-    req.onsuccess = () => resolve(req.result ?? []);
+    req.onsuccess = () => {
+      const rows = req.result ?? [];
+      resolve(days == null ? rows : rows.filter(s => s.days === days));
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -188,11 +214,19 @@ export async function clearSnapshots(accountId) {
   all.forEach(s => store.delete(s.id));
 }
 
-export async function getPreviousSnapshot(accountId) {
-  const all = await getSnapshotsByAccount(accountId);
-  if (all.length < 2) return null;
-  const sorted = [...all].sort((a, b) => b.date.localeCompare(a.date));
-  return sorted[1] ?? null;
+/**
+ * Coleta anterior comparável: mesmo período e de um DIA anterior.
+ *
+ * Pegar simplesmente o segundo item da lista comparava a coleta de 7d com a
+ * de 90d do mesmo dia, produzindo deltas sem sentido e um "vs. coleta de hoje".
+ */
+export async function getPreviousSnapshot(accountId, days = null) {
+  const all = await getSnapshotsByAccount(accountId, days);
+  const today = hojeLocal();
+  const anteriores = all
+    .filter(s => s.date < today)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  return anteriores[0] ?? null;
 }
 
 export function computeDeltas(currentKpis, previousKpis) {

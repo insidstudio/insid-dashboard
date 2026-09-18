@@ -3,3 +3,4 @@
 *.zip
 *.skill
 node_modules
+.claude
