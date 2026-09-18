@@ -164,7 +164,7 @@ function patchAiButton(btn) {
 async function injectCloudSyncBtn() {
   // Only if Supabase is configured
   const { isCloudEnabled, forceSyncAllToCloud } = await import('/js/storage.js');
-  if (!isCloudEnabled()) return;
+// if (!isCloudEnabled()) return;
 
   // Find the btnRefresh button to insert after it
   const btnRefresh = document.getElementById('btnRefresh');
