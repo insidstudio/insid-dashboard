@@ -7,8 +7,11 @@ const isAddMode = new URLSearchParams(location.search).get('add') === '1';
 loadServerConfig().then(async () => {
   await initSupabase();
   await syncFromCloud();
-  if (!isAddMode && isConfigured()) window.location.href = 'dashboard.html';
-});
+if (!isAddMode && isConfigured()) {
+  window.location.href = 'dashboard.html';
+} else {
+  render();
+}});
 
 const STEPS = [
   {
@@ -184,5 +187,3 @@ async function handleConnect() {
     }
   }
 }
-
-render();
