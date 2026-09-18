@@ -14,8 +14,8 @@ function escapeHtml(str) {
 
 function formatNumber(n) {
   if (n == null) return '0';
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace('.', ',') + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace('.', ',') + 'K';
   return n.toLocaleString('pt-BR');
 }
 
@@ -318,7 +318,7 @@ function initCharts(engagementTrend, conteudo, trendMeta) {
             clamp: true,
             color: token('--text-primary'),
             font: { size: 11, weight: '700' },
-            formatter: v => v >= 1000 ? (v / 1000).toFixed(1) + 'K' : v,
+            formatter: v => v >= 1000 ? (v / 1000).toFixed(1).replace('.', ',') + 'K' : v,
           },
         },
         scales: {
@@ -502,9 +502,9 @@ function renderAnalysis(data) {
   // Regras vivem em recomendacoes.js para que o PDF use exatamente as mesmas.
   const { continuar, melhorar, parar, saveRate, shareRate, taxaEng, bestReach, referencias } = computeRecomendacoes(data);
 
-  const saveColor = saveRate >= 2 ? 'var(--positive)' : saveRate >= 1 ? '#f59e0b' : 'var(--negative)';
-  const shareColor = shareRate >= 1 ? 'var(--positive)' : shareRate >= 0.5 ? '#f59e0b' : 'var(--negative)';
-  const engColor = taxaEng >= 3 ? 'var(--positive)' : taxaEng >= 1.5 ? '#f59e0b' : 'var(--negative)';
+  const saveColor = saveRate >= 2 ? 'var(--positive)' : saveRate >= 1 ? '#8A6100' : 'var(--negative)';
+  const shareColor = shareRate >= 1 ? 'var(--positive)' : shareRate >= 0.5 ? '#8A6100' : 'var(--negative)';
+  const engColor = taxaEng >= 3 ? 'var(--positive)' : taxaEng >= 1.5 ? '#8A6100' : 'var(--negative)';
 
   const healthCards = `<div class="cards-row">
     <div class="metric-card">
@@ -543,7 +543,7 @@ function renderAnalysis(data) {
     </div>
     <div class="metric-card" style="text-align:left;padding:28px 28px;align-self:start">
       <div style="font-size:24px;margin-bottom:10px">⚠️</div>
-      <div style="font-weight:600;color:#f59e0b;margin-bottom:16px;font-size:12px;text-transform:uppercase;letter-spacing:.08em">Melhorar</div>
+      <div style="font-weight:600;color:#8A6100;margin-bottom:16px;font-size:12px;text-transform:uppercase;letter-spacing:.08em">Melhorar</div>
       <ul style="padding-left:18px;margin:0;color:var(--text-secondary)">${makeList(melhorar)}</ul>
     </div>
     <div class="metric-card" style="text-align:left;padding:28px 28px;align-self:start">

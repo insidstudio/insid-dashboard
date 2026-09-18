@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ig-dashboard-v3';
+const CACHE_NAME = 'ig-dashboard-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -12,6 +12,8 @@ const STATIC_ASSETS = [
   '/js/dashboard-main.js',
   '/js/history-store.js',
   '/js/pdf-report.js',
+  '/js/recomendacoes.js',
+  '/js/ai-report.js',
   '/js/supabase-client.js',
   '/manifest.json',
 ];

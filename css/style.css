@@ -32,14 +32,14 @@
 
   --text-primary: #1C1C1E;
   --text-secondary: #55555C;
-  --text-muted: #8E8E96;
+  --text-muted: #70707A;
 
   --accent: #2E2E32;
   --accent-glow: rgba(46, 46, 50, 0.10);
   --positive: #1F7A55;
   --negative: #B3402F;
   --female: #55555C;
-  --male: #8E8E96;
+  --male: #70707A;
 
   /* Tokens de gráfico: escala monocromática grafite, lida por js/ui.js */
   --chart-1: #2E2E32;
@@ -199,7 +199,7 @@ body {
   justify-content: center;
   font-size: 11px;
   font-weight: 700;
-  color: var(--noir);
+  color: #FFFFFF;
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -1226,7 +1226,7 @@ body {
 
 .jornada-seta {
   font-size: 18px;
-  color: var(--border-strong);
+  color: var(--text-muted);
   padding: 7px 0;
 }
 

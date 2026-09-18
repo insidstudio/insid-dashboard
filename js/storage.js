@@ -158,9 +158,21 @@ export function removeStaleAccounts() {
   return stale.length;
 }
 
+/**
+ * Versao do formato dos dados em cache.
+ *
+ * Subir este numero descarta os payloads gravados por versoes anteriores do
+ * metrics.js. Sem isso, quem ja usava o dashboard continuava vendo o relatorio
+ * montado a partir de um cache antigo: as secoes novas liam campos que aquele
+ * payload nao tinha e renderizavam vazio, dando a impressao de que so o tema
+ * havia mudado.
+ */
+const CACHE_SCHEMA = 2;
+
 export function saveCache(data, days = 30) {
   const id = getActiveAccountId() || 'default';
-  localStorage.setItem(`ig_cache_${id}_${days}d`, JSON.stringify(data));
+  const payload = { ...data, __schema: CACHE_SCHEMA };
+  localStorage.setItem(`ig_cache_${id}_${days}d`, JSON.stringify(payload));
   localStorage.setItem(KEYS.LAST_UPDATED, new Date().toISOString());
 }
 
@@ -169,7 +181,11 @@ export function getCache(days = 30) {
   try {
     const raw = localStorage.getItem(`ig_cache_${id}_${days}d`);
     const fallback = localStorage.getItem(`ig_cache_${id}`);
-    return raw ? JSON.parse(raw) : (days === 30 && fallback ? JSON.parse(fallback) : null);
+    const bruto = raw ? JSON.parse(raw) : (days === 30 && fallback ? JSON.parse(fallback) : null);
+    if (!bruto) return null;
+    // Payload de formato antigo: trata como cache vazio e forca nova coleta.
+    if (bruto.__schema !== CACHE_SCHEMA) return null;
+    return bruto;
   } catch { return null; }
 }
 
