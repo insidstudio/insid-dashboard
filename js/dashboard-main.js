@@ -2,7 +2,7 @@ import { isConfigured, loadServerConfig, getCache, saveCache, getLastUpdated, cl
 import { initSupabase } from './supabase-client.js';
 import { fetchAllMetrics } from './metrics.js';
 import { renderHeader, renderDashboard, initEvolutionCharts } from './ui.js';
-import { saveSnapshot, pruneOldSnapshots, getSnapshotsByAccount, getPreviousSnapshot, computeDeltas } from './history-store.js';
+import { saveSnapshot, pruneOldSnapshots, getPreviousSnapshot, computeDeltas } from './history-store.js';
 import { openPdfReport } from './pdf-report.js';
 
 let currentDays = 30;
@@ -191,12 +191,9 @@ async function loadDashboard(forceRefresh = false, days = currentDays) {
     renderHeader(data, days, data.periodo, getAccounts(), getActiveAccountId(), isCustom);
     renderDashboard(data, deltas);
 
-    // Load evolution charts from IndexedDB
-    if (accountId) {
-      getSnapshotsByAccount(accountId, days).then(snaps => {
-        initEvolutionCharts(snaps);
-      }).catch(() => {});
-    }
+    // Evolução no período: série diária da própria coleta, não mais o
+    // histórico de snapshots (que só tinha um ponto por dia de uso).
+    initEvolutionCharts(data.evolucao, data.periodo?.dias ?? days);
 
     const lastUpdated = getLastUpdated();
     const timestamp = document.querySelector('.header-timestamp');

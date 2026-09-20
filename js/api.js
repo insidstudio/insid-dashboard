@@ -87,6 +87,24 @@ export async function fetchNetFollows(since, until) {
  * E a metrica que responde se o conteudo furou a bolha ou so circulou na base.
  * Nem toda conta/token devolve esse breakdown, entao quem chama trata a falha.
  */
+/**
+ * Serie DIARIA das metricas de conta, um ponto por dia do periodo.
+ *
+ * A diferenca para fetchAccountInsights e a ausencia de `metric_type`:
+ * com 'total_value' a API colapsa o periodo inteiro num unico numero;
+ * sem ele devolve `values: [{ value, end_time }, ...]`, que e o que alimenta
+ * os graficos de evolucao.
+ */
+export async function fetchDailySeries(since, until) {
+  const userId = getUserId();
+  return graphGet(`/${userId}/insights`, {
+    metric: 'reach,views,total_interactions,follows_and_unfollows',
+    period: 'day',
+    since,
+    until,
+  });
+}
+
 export async function fetchReachByFollowType(since, until) {
   const userId = getUserId();
   return graphGet(`/${userId}/insights`, {

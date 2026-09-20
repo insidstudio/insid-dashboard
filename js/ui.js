@@ -803,7 +803,7 @@ export function renderDashboard(data, deltas = null) {
   const evolutionSection = `<div class="section" id="evolutionSection" style="display:none">
     <div class="section-header">
       <div>
-        <div class="section-eyebrow">Histórico</div>
+        <div class="section-eyebrow">Dia a dia do período</div>
         <h2 class="section-title">Evolução ao Longo do Tempo</h2>
       </div>
     </div>
@@ -815,7 +815,7 @@ export function renderDashboard(data, deltas = null) {
       </div>
       <div class="chart-card">
         <div class="chart-eyebrow">alcance & impressões</div>
-        <div class="chart-title">Alcance por Período</div>
+        <div class="chart-title">Alcance Diário</div>
         <div class="chart-container"><canvas id="chartEvoReach"></canvas></div>
       </div>
       <div class="chart-card">
@@ -859,49 +859,41 @@ export function renderDashboard(data, deltas = null) {
 }
 
 // ============================================================
-//  EVOLUTION CHARTS (populated from IndexedDB snapshots)
+//  EVOLUCAO NO PERIODO (serie diaria vinda da API)
 // ============================================================
 
-export function initEvolutionCharts(snapshots) {
-  if (typeof Chart === 'undefined' || !snapshots || snapshots.length < 2) {
-    const hint = document.getElementById('evolutionHint');
-    if (hint && snapshots && snapshots.length < 2) {
-      const section = document.getElementById('evolutionSection');
-      if (section) section.style.display = '';
-      hint.textContent = 'Os gr\u00e1ficos de evolu\u00e7\u00e3o aparecer\u00e3o ap\u00f3s pelo menos 2 coletas em dias diferentes. Continue usando o dashboard!';
+/**
+ * Quatro graficos de evolucao dentro do periodo selecionado.
+ *
+ * Antes isto lia o historico de coletas do IndexedDB: um ponto por dia em que
+ * alguem abrisse o dashboard. Quem nao abria todo dia via os quatro em branco,
+ * e o recorte nao tinha relacao com o periodo escolhido no topo. Agora recebe a
+ * serie diaria que o metrics.js monta a partir da API, cobrindo exatamente o
+ * intervalo do filtro.
+ */
+export function initEvolutionCharts(evolucao, periodoDias) {
+  const section = document.getElementById('evolutionSection');
+  const hint = document.getElementById('evolutionHint');
+
+  if (typeof Chart === 'undefined') return;
+
+  const serie = (evolucao ?? []).filter(p => p && p.data);
+
+  if (serie.length < 2) {
+    if (section) section.style.display = '';
+    if (hint) {
+      hint.textContent = serie.length === 0
+        ? 'A API do Instagram não retornou a série diária para esta conta neste período.'
+        : 'Período curto demais para desenhar uma evolução — escolha um intervalo maior.';
     }
+    destroyCharts(CHARTS_EVOLUCAO);
     return;
   }
 
-  const section = document.getElementById('evolutionSection');
   if (section) section.style.display = '';
-
   destroyCharts(CHARTS_EVOLUCAO);
 
-  // Uma coleta por dia: se houver mais de uma no mesmo dia, vale a mais recente.
-  // Sem isso o gráfico empilha vários pontos sobre a mesma data e parece travado.
-  const porDia = new Map();
-  snapshots.forEach(s => {
-    const anterior = porDia.get(s.date);
-    if (!anterior || (s.updatedAt ?? s.createdAt ?? '') >= (anterior.updatedAt ?? anterior.createdAt ?? '')) {
-      porDia.set(s.date, s);
-    }
-  });
-
-  const sorted = [...porDia.values()].sort((a, b) => a.date.localeCompare(b.date));
-
-  if (sorted.length < 2) {
-    const hintUnico = document.getElementById('evolutionHint');
-    if (hintUnico) {
-      hintUnico.textContent = 'Só há uma coleta registrada neste período. Os gráficos de evolução comparam coletas de dias diferentes — volte amanhã para ver a linha crescer.';
-    }
-    return;
-  }
-
-  const labels = sorted.map(s => {
-    const [y, m, d] = s.date.split('-');
-    return d + '/' + m;
-  });
+  const labels = serie.map(p => p.label);
 
   const gridColor = token('--chart-grid');
   const tickColor = token('--chart-tick');
@@ -915,123 +907,88 @@ export function initEvolutionCharts(snapshots) {
     cornerRadius: 10,
   };
 
-  const lineOpts = (yLabel) => ({
+  // Um ponto por dia fica denso em 90 dias: some o marcador e limita os ticks.
+  const denso = serie.length > 31;
+
+  const lineOpts = () => ({
     responsive: true,
     maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
     plugins: {
       legend: { labels: { color: tickColor, boxWidth: 10, padding: 14 } },
       tooltip: tooltipDefaults,
       datalabels: { display: false },
     },
     scales: {
-      x: { grid: { color: gridColor }, ticks: { color: tickColor } },
-      y: { grid: { color: gridColor }, ticks: { color: tickColor }, title: { display: false } },
+      x: { grid: { display: false }, ticks: { color: tickColor, autoSkip: true, maxTicksLimit: 8, maxRotation: 0 } },
+      y: { grid: { color: gridColor }, ticks: { color: tickColor } },
     },
-    elements: { point: { radius: 4, hoverRadius: 6 }, line: { tension: 0.3 } },
+    elements: {
+      point: { radius: denso ? 0 : 3, hoverRadius: 5 },
+      line: { tension: 0.3, borderWidth: 2 },
+    },
   });
 
-  // 1. Followers
+  const linha = (label, campo, cor, preenche = false) => ({
+    label,
+    data: serie.map(p => p[campo]),
+    borderColor: token(cor),
+    backgroundColor: preenche ? token('--chart-area') : 'transparent',
+    fill: preenche,
+    // Dias sem publicação vêm como null: liga um ponto ao outro em vez de
+    // desenhar uma queda a zero que não aconteceu.
+    spanGaps: true,
+  });
+
+  // 1. Seguidores (reconstruido para tras a partir do total de hoje)
   const ctx1 = document.getElementById('chartEvoFollowers');
-  if (ctx1) {
+  if (ctx1 && serie.some(p => p.seguidores != null)) {
     _chartInstances.evoFollowers = new Chart(ctx1, {
       type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Seguidores',
-          data: sorted.map(s => s.kpis.seguidores),
-          borderColor: token('--chart-1'),
-          backgroundColor: token('--chart-area'),
-          fill: true,
-        }],
-      },
+      data: { labels, datasets: [linha('Seguidores', 'seguidores', '--chart-1', true)] },
       options: lineOpts(),
     });
   }
 
-  // 2. Reach & Impressions
+  // 2. Alcance e impressoes
   const ctx2 = document.getElementById('chartEvoReach');
   if (ctx2) {
     _chartInstances.evoReach = new Chart(ctx2, {
       type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Alcance',
-            data: sorted.map(s => s.kpis.alcance),
-            borderColor: token('--chart-1'),
-            backgroundColor: token('--chart-area'),
-            fill: false,
-          },
-          {
-            label: 'Impress\u00f5es',
-            data: sorted.map(s => s.kpis.impressoes),
-            borderColor: token('--chart-3'),
-            backgroundColor: 'rgba(142, 142, 150, 0.12)',
-            fill: false,
-          },
-        ],
-      },
+      data: { labels, datasets: [
+        linha('Alcance', 'alcance', '--chart-1'),
+        linha('Impressões', 'impressoes', '--chart-3'),
+      ] },
       options: lineOpts(),
     });
   }
 
-  // 3. Engagement rate
+  // 3. Taxa de engajamento diaria
   const ctx3 = document.getElementById('chartEvoEngagement');
   if (ctx3) {
     _chartInstances.evoEngagement = new Chart(ctx3, {
       type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Taxa de Engajamento (%)',
-          data: sorted.map(s => s.kpis.taxaEngajamento),
-          borderColor: token('--chart-1'),
-          backgroundColor: token('--chart-area'),
-          fill: true,
-        }],
-      },
+      data: { labels, datasets: [linha('Taxa de Engajamento (%)', 'taxaEngajamento', '--chart-1', true)] },
       options: lineOpts(),
     });
   }
 
-  // 4. Interactions breakdown
+  // 4. Curtidas, saves e shares por dia de publicacao
   const ctx4 = document.getElementById('chartEvoInteractions');
   if (ctx4) {
     _chartInstances.evoInteractions = new Chart(ctx4, {
       type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Curtidas',
-            data: sorted.map(s => s.kpis.curtidas),
-            borderColor: token('--chart-1'),
-            fill: false,
-          },
-          {
-            label: 'Salvamentos',
-            data: sorted.map(s => s.kpis.salvamentos),
-            borderColor: token('--chart-2'),
-            fill: false,
-          },
-          {
-            label: 'Compartilhamentos',
-            data: sorted.map(s => s.kpis.compartilhamentos),
-            borderColor: token('--chart-3'),
-            fill: false,
-          },
-        ],
-      },
+      data: { labels, datasets: [
+        linha('Curtidas', 'curtidas', '--chart-1'),
+        linha('Salvamentos', 'salvamentos', '--chart-2'),
+        linha('Compartilhamentos', 'compartilhamentos', '--chart-3'),
+      ] },
       options: lineOpts(),
     });
   }
 
-  const hint = document.getElementById('evolutionHint');
   if (hint) {
-    const dias = snapshots[0]?.days;
-    const periodoTxt = dias ? ' (período de ' + dias + 'd)' : '';
-    hint.textContent = sorted.length + ' coletas em dias distintos' + periodoTxt + ' \u2014 de ' + labels[0] + ' a ' + labels[labels.length - 1];
+    const dias = periodoDias ? ` (últimos ${periodoDias} dias)` : '';
+    hint.textContent = `${serie.length} dias${dias} — de ${labels[0]} a ${labels[labels.length - 1]}. Dados diários da API do Instagram.`;
   }
 }

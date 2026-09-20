@@ -122,6 +122,7 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
     followsBreakdownResult,
     netFollowsResult,
     reachByFollowTypeResult,
+    dailySeriesResult,
   ] = await Promise.allSettled([
     api.fetchAccountInfo(),
     api.fetchAccountInsights(since, until),
@@ -133,6 +134,7 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
     api.fetchFollowsBreakdown(since, until),
     api.fetchNetFollows(since, until),
     api.fetchReachByFollowType(since, until),
+    api.fetchDailySeries(since, until),
   ]);
 
   const accountInfo = accountInfoResult.status === 'fulfilled' ? accountInfoResult.value : null;
@@ -145,6 +147,7 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
   const followsRaw = followsBreakdownResult.status === 'fulfilled' ? followsBreakdownResult.value : null;
   const netFollowsRaw = netFollowsResult.status === 'fulfilled' ? netFollowsResult.value : null;
   const reachByFollowTypeRaw = reachByFollowTypeResult.status === 'fulfilled' ? reachByFollowTypeResult.value : null;
+  const dailySeriesRaw = dailySeriesResult.status === 'fulfilled' ? dailySeriesResult.value : null;
 
   const insights = accountInsightsRaw?.data ?? [];
   const allMedia = mediaRaw?.data ?? [];
@@ -511,6 +514,83 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
     temComparativo: Boolean(periodoAnterior),
   };
 
+  // --- Evolucao diaria dentro do periodo escolhido ---
+  // Antes estes graficos vinham do historico de coletas (um ponto por dia em
+  // que alguem abrisse o dashboard), entao ficavam vazios para quase todo mundo.
+  // Agora saem da serie diaria da propria API e cobrem o periodo selecionado.
+
+  /** Le `values: [{ value, end_time }]` de uma metrica da serie diaria. */
+  const serieDe = (nome) => {
+    const m = (dailySeriesRaw?.data ?? []).find(x => x.name === nome);
+    const vals = m?.values ?? [];
+    const out = {};
+    vals.forEach(v => {
+      if (!v?.end_time) return;
+      out[v.end_time.slice(0, 10)] = v.value ?? 0;
+    });
+    return out;
+  };
+
+  const serieAlcance = serieDe('reach');
+  const serieViews = serieDe('views');
+  const serieInteracoes = serieDe('total_interactions');
+  const serieFollows = serieDe('follows_and_unfollows');
+
+  // Curtidas/saves/shares nao existem por dia na conta: vem das midias,
+  // agrupadas pelo dia em que foram publicadas.
+  const porDiaMidia = {};
+  enrichedMedia.forEach(m => {
+    const chave = dayKey(new Date(m.timestamp));
+    if (!porDiaMidia[chave]) porDiaMidia[chave] = { curtidas: 0, salvamentos: 0, compartilhamentos: 0 };
+    porDiaMidia[chave].curtidas += m.like_count ?? 0;
+    porDiaMidia[chave].salvamentos += m.saves ?? 0;
+    porDiaMidia[chave].compartilhamentos += m.shares ?? 0;
+  });
+
+  const isoParaChave = iso => {
+    const [a, mm, dd] = iso.split('-').map(Number);
+    return `${a}-${mm}-${dd}`;
+  };
+
+  const VAZIO = Object.freeze({ curtidas: 0, salvamentos: 0, compartilhamentos: 0 });
+
+  const diasOrdenados = Object.keys(serieAlcance).sort();
+
+  // Seguidores nao tem historico na API: so o total de hoje. Reconstruimos para
+  // tras subtraindo o saldo liquido de cada dia posterior.
+  const totalHoje = seguidoresTotal;
+  const seguidoresPorDia = {};
+  let acumulado = 0;
+  for (let i = diasOrdenados.length - 1; i >= 0; i--) {
+    const dia = diasOrdenados[i];
+    seguidoresPorDia[dia] = totalHoje - acumulado;
+    acumulado += serieFollows[dia] ?? 0;
+  }
+
+  const evolucao = diasOrdenados.map(dia => {
+    const [ano, mes, d] = dia.split('-');
+    const alcanceDia = serieAlcance[dia] ?? 0;
+    const interDia = serieInteracoes[dia] ?? 0;
+    const midia = porDiaMidia[isoParaChave(dia)] ?? VAZIO;
+    return {
+      data: dia,
+      label: `${Number(d)}/${Number(mes)}`,
+      seguidores: seguidoresPorDia[dia] ?? null,
+      novosSeguidores: serieFollows[dia] ?? 0,
+      alcance: alcanceDia,
+      impressoes: serieViews[dia] ?? 0,
+      interacoes: interDia,
+      taxaEngajamento: alcanceDia > 0 ? Math.round((interDia / alcanceDia) * 1000) / 10 : 0,
+      // null, e nao 0, nos dias sem publicacao: zero seria lido como
+      // "nao engajou", quando na verdade nao houve post. O grafico liga uma
+      // publicacao a outra em vez de despencar ate a linha de base.
+      temPost: midia !== VAZIO,
+      curtidas: midia === VAZIO ? null : midia.curtidas,
+      salvamentos: midia === VAZIO ? null : midia.salvamentos,
+      compartilhamentos: midia === VAZIO ? null : midia.compartilhamentos,
+    };
+  });
+
   return {
     account: {
       username: accountInfo?.username ?? null,
@@ -538,6 +618,7 @@ export async function fetchAllMetrics(days = 30, customSince = null, customUntil
     jornada,
     formatosTabela,
     resumoExecutivo,
+    evolucao,
     contentPerformance,
     postingHeatmap,
   };
